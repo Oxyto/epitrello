@@ -5,11 +5,11 @@
 <TopBar login={true} />
 <div
     id="login-content"
-    class="flex h-screen flex-col items-center justify-center bg-gray-100 p-8"
+    class="flex h-[calc(100vh-4rem)] items-center justify-center bg-gray-100 p-8"
 >
     <div
         id="login-form-container"
-        class="w-full max-w-md rounded bg-white p-8 shadow-lg"
+        class="w-full max-w-md max-h-[calc(100vh-6rem)] rounded bg-white p-8 shadow-lg"
     >
         <h2 class="mb-6 text-2xl font-semibold text-center">Login to EpiTrello</h2>
         <form id="login-form" class="flex flex-col gap-4">
