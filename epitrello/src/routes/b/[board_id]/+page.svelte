@@ -29,7 +29,7 @@
 	<EditCard />
 {/if}
 <div id="board-page" class="h-[calc(100vh-4rem)] w-screen bg-gray-600 p-4">
-	<div id="board-header" class="mb-4 flex items-center gap-4 bg-gray-100 p-4 shadow-md">
+	<div id="board-header" class="mb-4 flex items-center gap-4 rounded bg-gray-100 p-4 shadow-md">
 		<input
 			class="rounded border-0 bg-transparent text-3xl font-bold hover:bg-gray-200 focus:outline-0"
 			title="Board Name"
@@ -42,14 +42,27 @@
 		{#each lists as list}
 			<div id={list.name} class="min-w-[250px] rounded bg-gray-800 p-4 text-gray-200 shadow-md">
 				<input class="rounded border-0 bg-gray-800 text-lg font-bold" bind:value={list.name} />
-				<div id={list.name + '-cards'} class="mt-4 flex flex-col gap-2 bg-gray-800">
+				<ol id={list.name + '-cards'} class="mt-4 flex flex-col gap-2 bg-gray-800">
 					{#each list.cards as card}
-						<div class="card-item flex items-center gap-2 rounded bg-gray-700 p-2">
-							<input type="checkbox" class="rounded-4xl mr-2" title="Mark as complete" />
-							<a class="text-md rounded border-0 bg-gray-700" href="#c-{card.id}">{card.title}</a>
-						</div>
+						<li
+							class="card-item flex h-12 items-center gap-2 rounded bg-gray-700 ps-2"
+							draggable="true"
+						>
+							<input
+								type="checkbox"
+								class="rounded-4xl mr-2 hover:cursor-pointer"
+								title="Mark as complete"
+							/>
+							<span
+								><a
+									class="text-md h-full w-full select-none rounded border-0 bg-gray-700"
+									draggable="false"
+									href="#c-{card.id}">{card.title}</a
+								></span
+							>
+						</li>
 					{/each}
-				</div>
+				</ol>
 			</div>
 		{/each}
 	</div>
