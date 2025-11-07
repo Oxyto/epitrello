@@ -65,5 +65,13 @@
 				</ol>
 			</div>
 		{/each}
+		<div id="add-list" class="min-w-[250px] rounded bg-gray-800 p-4 text-gray-200 shadow-md">
+			<button class="w-full rounded bg-gray-700 px-4 py-2 hover:bg-gray-600">+ Add List</button>
+			<input
+				type="text"
+				class="mt-2 w-full rounded border-0 bg-gray-800 p-2"
+				placeholder="New list name..."
+			/>
+		</div>
 	</div>
 </div>
