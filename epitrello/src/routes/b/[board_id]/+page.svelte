@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import UserSearchBar from '../../user_search_bar.svelte';
+	import Card from './card.svelte';
 	import EditCard from './edit_card.svelte';
 
-	const { data } = $props();
 	let board_name = $state('');
 	let lists = $state([
 		{
@@ -44,23 +44,7 @@
 				<input class="rounded border-0 bg-gray-800 text-lg font-bold" bind:value={list.name} />
 				<ol id={list.name + '-cards'} class="mt-4 flex flex-col gap-2 bg-gray-800">
 					{#each list.cards as card}
-						<li
-							class="card-item flex h-12 items-center gap-2 rounded bg-gray-700 ps-2"
-							draggable="true"
-						>
-							<input
-								type="checkbox"
-								class="rounded-4xl mr-2 hover:cursor-pointer"
-								title="Mark as complete"
-							/>
-							<span
-								><a
-									class="text-md h-full w-full select-none rounded border-0 bg-gray-700"
-									draggable="false"
-									href="#c-{card.id}">{card.title}</a
-								></span
-							>
-						</li>
+						<Card card={card} />
 					{/each}
 				</ol>
 			</div>
