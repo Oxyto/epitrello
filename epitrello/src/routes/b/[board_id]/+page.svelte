@@ -4,10 +4,10 @@
 	import Card from './card.svelte';
 	import EditCard from './edit_card.svelte';
 
-	// Nom du board
-	let board_name = $state('Mon board');
+    const { data } = $props();
 
-	// Listes + cartes (state FRONT uniquement)
+    let board_name = $state(data.board_name ?? 'Mon board');
+
 	let lists = $state([
 		{
 			name: 'To Do',
@@ -32,7 +32,6 @@
 		}
 	]);
 
-	// Champ pour créer une nouvelle liste
 	let newListName = $state('');
 
 	function addList() {
@@ -53,7 +52,6 @@
 		const title = (list.newCardTitle ?? '').trim();
 		if (!title) return;
 
-		// On cherche le plus grand id actuel
 		let maxId = 0;
 		for (const l of lists) {
 			for (const c of l.cards) {
@@ -77,7 +75,6 @@
 		lists[listIndex].cards.splice(cardIndex, 1);
 	}
 
-	// ------- TAGS -------
 	function handleAddTag(event: CustomEvent<{ listIndex: number; cardIndex: number; tag: string }>) {
 		const { listIndex, cardIndex, tag } = event.detail;
 
@@ -92,7 +89,6 @@
 		lists.splice(index, 1);
 	}
 
-	// ------- TITRE -------
 	function handleUpdateTitle(
 		event: CustomEvent<{ listIndex: number; cardIndex: number; title: string }>
 	) {
@@ -100,7 +96,6 @@
 		lists[listIndex].cards[cardIndex].title = title;
 	}
 
-	// ------- DÉPLACEMENT (← / →) -------
 	function handleMoveCard(
 		event: CustomEvent<{ listIndex: number; cardIndex: number; direction: number }>
 	) {
