@@ -6,6 +6,5 @@ export interface IUser {
     email: string;
     password_hash?: string;
     profile_picture_url?: string;
-    boards_uuid: [string];
-    
+    boards_uuid: [UUID];
 }
