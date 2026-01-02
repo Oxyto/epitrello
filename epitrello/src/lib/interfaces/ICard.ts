@@ -1,5 +1,6 @@
 import type { UUID } from "crypto";
 
+// IMPORTANT: Using UUID v7 ONLY
 export interface ICard {
     uuid: UUID;
     name: string;
