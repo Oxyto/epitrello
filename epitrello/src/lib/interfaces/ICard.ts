@@ -4,7 +4,7 @@ export interface ICard {
     uuid: UUID;
     name: string;
     tags: [UUID];
-    assignees: [UUID];
+    assignees?: [UUID];
     due_date?: Date;
     description: string;
     checklist?: [[boolean, string]];
