@@ -1,9 +1,10 @@
-import type { UUID } from "crypto";
+import { z } from 'zod';
 
-// IMPORTANT: Using UUID v7 ONLY
-export interface Itag {
-    uuid: UUID;
-    name: string;
-    type: string;
-    attributes: [string];
-}
+export const TagSchema = z.object({
+    uuid: z.uuidv7(),
+    name: z.string(),
+    type: z.string(),
+    attributes: z.array(z.string())
+})
+
+export type ITag = z.infer<typeof TagSchema>

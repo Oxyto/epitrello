@@ -1,11 +1,13 @@
-import type { UUID } from "crypto";
+import { z } from 'zod';
 
-// IMPORTANT: Using UUID v7 ONLY
-export interface IUser {
-    uuid: UUID;
-    username: string;
-    email: string;
-    password_hash?: string;
-    profile_picture_url?: string;
-    boards: [UUID];
-}
+export const UserSchema = z.object({
+	uuid: z.uuidv7(),
+	admin: z.union([z.literal('yes'), z.literal('no')]),
+	username: z.string(),
+	email: z.email(),
+	password_hash: z.union([z.hash('sha256'), z.literal('')]),
+    profile_picture_url: z.union([z.url(), z.literal('')]),
+    boards: z.array(z.uuidv7()).optional()
+});
+
+export type IUser = z.infer<typeof UserSchema>
