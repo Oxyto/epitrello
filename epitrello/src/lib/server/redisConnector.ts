@@ -1,7 +1,10 @@
 import { RedisClient, randomUUIDv7 } from 'bun';
 import { UserSchema, type IUser } from '$lib/interfaces/IUser';
 import { BoardSchema, type IBoard } from '$lib/interfaces/IBoard';
+import { ListSchema, type IList } from '$lib/interfaces/IList';
 import type { UUID } from 'crypto';
+import { TagSchema } from '$lib/interfaces/ITag';
+import { CardSchema } from '$lib/interfaces/ICard';
 
 export const rdb = new RedisClient(process.env.REDIS_URL);
 
@@ -48,12 +51,12 @@ export class UserConnector {
 	}
 
 	static async del(userId: UUID) {
-		await rdb.del(`user:${userId}`);
 		const boards_query = await rdb.smembers(`user:${userId}:boards`);
 
-		if (boards_query && Object.keys(boards_query).length > 0) {
+		if (boards_query) {
 			await Promise.all(boards_query.map((boardId) => BoardConnector.del(boardId as UUID)));
 		}
+		await Promise.all([rdb.del(`user:${userId}`), rdb.del(`user:${userId}:boards`)]);
 	}
 }
 
@@ -105,9 +108,11 @@ export class BoardConnector {
 
 		const board = BoardSchema.parse(board_query);
 
-		board.editors = await rdb.smembers(`board:${boardId}:editors`);
-		board.viewers = await rdb.smembers(`board:${boardId}:viewers`);
-		board.lists = await rdb.smembers(`board:${boardId}:lists`);
+		[board.editors, board.viewers, board.lists] = await Promise.all([
+			rdb.smembers(`board:${boardId}:editors`),
+			rdb.smembers(`board:${boardId}:viewers`),
+			rdb.smembers(`board:${boardId}:lists`)
+		]);
 
 		return board;
 	}
@@ -129,6 +134,12 @@ export class BoardConnector {
 	}
 
 	static async del(boardId: UUID) {
+		const lists_query = await rdb.smembers(`boards:${boardId}:lists`);
+
+		if (lists_query) {
+			await Promise.all(lists_query.map((listId) => ListConnector.del(listId as UUID)));
+		}
+
 		await Promise.all([
 			await rdb.del(`board:${boardId}`),
 			await rdb.del(`board:${boardId}:editors`),
@@ -139,13 +150,136 @@ export class BoardConnector {
 }
 
 export class ListConnector {
+	static async create(boardId: UUID, name: string) {
+		const uuid = randomUUIDv7();
 
+		await rdb.hset(`list:${uuid}`, {
+			uuid,
+			name,
+			board: boardId,
+			order: 100
+		});
+
+		return uuid as UUID;
+	}
+
+	static async save(list: IList) {
+		await rdb.hset(`list:${list.uuid}`, {
+			uuid: list.uuid,
+			name: list.name,
+			board: list.board,
+			order: list.order
+		});
+
+		if (list.cards) {
+			await Promise.all(list.cards.map((cardId) => rdb.sadd(`list:${list.uuid}:cards`, cardId)));
+		}
+	}
+
+	static async get(listId: UUID) {
+		const list_query = await rdb.hgetall(`list:${listId}`);
+
+		if (!list_query || Object.keys(list_query).length === 0) {
+			return null;
+		}
+
+		const list = ListSchema.parse(list_query);
+		list.cards = await rdb.smembers(`list:${listId}:cards`);
+
+		return list;
+	}
+
+	static async del(listId: UUID) {
+		const cards_query = await rdb.smembers(`list:${listId}:cards`);
+
+		if (cards_query) {
+			await Promise.all(cards_query.map((cardId) => CardConnector.del(cardId as UUID)));
+		}
+		await rdb.del(`list:${listId}`);
+	}
 }
 
 export class CardConnector {
-	
+	static async create(listId: UUID, name: string) {
+		const uuid = randomUUIDv7();
+
+		await rdb.hset(`card:${uuid}`, {
+			uuid: uuid,
+			name,
+			list: listId,
+			order: 0,
+			description: '',
+			date: ''
+		});
+
+		return uuid;
+	}
+
+	static async get(cardId: UUID) {
+		const card_query = await rdb.hgetall(`card:${cardId}`);
+
+		if (!card_query || Object.keys(card_query).length === 0) {
+			return null;
+		}
+
+		const card = CardSchema.parse(card_query);
+		card.tags = await rdb.smembers(`card:${cardId}:tags`);
+
+		return card;
+	}
+
+	static async getByListId(listId: UUID) {
+		const cards_query = await rdb.smembers(`list:${listId}:cards`);
+
+		return Promise.all(cards_query.map((cardId) => CardConnector.get(cardId as UUID)));
+	}
+
+	static async del(cardId: UUID) {
+		const tags_query = await rdb.smembers(`card:${cardId}:tags`);
+
+		if (tags_query) {
+			await Promise.all(tags_query.map((tagId) => TagConnector.del(tagId as UUID)));
+		}
+		await Promise.all([
+			rdb.del(`card:${cardId}`),
+			rdb.del(`card:${cardId}:assignees`),
+			rdb.del(`card:${cardId}:checklist`),
+			rdb.del(`card:${cardId}:tags`)
+		]);
+	}
 }
 
 export class TagConnector {
-	
+	static async create(cardId: UUID, name: string, type: string, color: string) {
+		const uuid = randomUUIDv7();
+
+		await rdb.hset(`tag:${uuid}`, {
+			uuid: uuid,
+			name,
+			type,
+			color
+		});
+
+		return uuid;
+	}
+
+	static async get(tagId: UUID) {
+		const tag_query = await rdb.hgetall(`tag:${tagId}`);
+
+		if (!tag_query || Object.keys(tag_query).length === 0) {
+			return null;
+		}
+
+		return TagSchema.parse(tag_query);
+	}
+
+	static async getAllByCardId(cardId: UUID) {
+		const tags_query = await rdb.smembers(`card:${cardId}:tags`);
+
+		return Promise.all(tags_query.map((tagId) => TagConnector.get(tagId as UUID)));
+	}
+
+	static async del(tagId: UUID) {
+		await Promise.all([rdb.del(`tag:${tagId}`), rdb.del(`tag:${tagId}:attributes`)]);
+	}
 }
