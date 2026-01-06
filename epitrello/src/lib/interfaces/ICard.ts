@@ -1,12 +1,13 @@
-import type { UUID } from "crypto";
+import { z } from 'zod';
 
-// IMPORTANT: Using UUID v7 ONLY
-export interface ICard {
-    uuid: UUID;
-    name: string;
-    tags: [UUID];
-    assignees?: [UUID];
-    due_date?: Date;
-    description: string;
-    checklist?: [[boolean, string]];
-}
+export const CardSchema = z.object({
+	uuid: z.uuidv7(),
+	name: z.string(),
+	description: z.string(),
+	tags: z.array(z.uuidv7()).optional(),
+	assignees: z.array(z.uuidv7()).optional(),
+	date: z.union([z.date(), z.literal('')]),
+	checklist: z.array(z.tuple([z.boolean(), z.string()])).optional()
+});
+
+export type ICard = z.infer<typeof CardSchema>;
