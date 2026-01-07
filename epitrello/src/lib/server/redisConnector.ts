@@ -2,9 +2,9 @@ import { RedisClient, randomUUIDv7 } from 'bun';
 import { UserSchema, type IUser } from '$lib/interfaces/IUser';
 import { BoardSchema, type IBoard } from '$lib/interfaces/IBoard';
 import { ListSchema, type IList } from '$lib/interfaces/IList';
+import { TagSchema, type ITag } from '$lib/interfaces/ITag';
+import { CardSchema, type ICard } from '$lib/interfaces/ICard';
 import type { UUID } from 'crypto';
-import { TagSchema } from '$lib/interfaces/ITag';
-import { CardSchema } from '$lib/interfaces/ICard';
 
 export const rdb = new RedisClient(process.env.REDIS_URL);
 
@@ -215,6 +215,24 @@ export class CardConnector {
 		return uuid;
 	}
 
+	static async save(card: ICard) {
+		await rdb.hset(`card:${card.uuid}`, {
+			uuid: card.uuid,
+			name: card.name,
+			description: card.description,
+			order: card.order,
+			date: card.date.toLocaleString(),
+			checklist: JSON.stringify(card.checklist)
+		})
+
+		if (card.tags) {
+			await Promise.all(card.tags.map((tagId) => rdb.sadd(`card:${card.uuid}:tags`, tagId)))
+		}
+		if (card.assignees) {
+			await Promise.all(card.assignees.map((assigneeId) => rdb.sadd(`card:${card.uuid}:assignees`, assigneeId)))
+		}
+	}
+
 	static async get(cardId: UUID) {
 		const card_query = await rdb.hgetall(`card:${cardId}`);
 
@@ -243,7 +261,6 @@ export class CardConnector {
 		await Promise.all([
 			rdb.del(`card:${cardId}`),
 			rdb.del(`card:${cardId}:assignees`),
-			rdb.del(`card:${cardId}:checklist`),
 			rdb.del(`card:${cardId}:tags`)
 		]);
 	}
@@ -255,12 +272,23 @@ export class TagConnector {
 
 		await rdb.hset(`tag:${uuid}`, {
 			uuid: uuid,
+			card: cardId,
 			name,
 			type,
 			color
 		});
 
 		return uuid;
+	}
+
+	static async save(tag: ITag) {
+		await rdb.hset(`tag:${tag.uuid}`, {
+			uuid: tag.uuid,
+			card: tag.card,
+			name: tag.name,
+			type: tag.type,
+			color: tag.color
+		})
 	}
 
 	static async get(tagId: UUID) {
