@@ -143,7 +143,7 @@
 				<button
 					type="button"
 					class="rounded bg-red-600 px-2 py-1 text-xs hover:bg-red-500"
-					on:click={() => deleteList(i)}
+					onclick={() => deleteList(i)}
 				>
 					Delete
 				</button>
@@ -166,7 +166,7 @@
 
 				<form
 					class="mt-3 flex gap-2"
-					on:submit|preventDefault={() => addCard(i)}
+					onsubmit={() => addCard(i)}
 				>
 					<input
 						type="text"
@@ -188,7 +188,7 @@
 			id="add-list"
 			class="min-w-[250px] rounded bg-gray-800 p-4 text-gray-200 shadow-md"
 		>
-			<form on:submit|preventDefault={addList} class="flex flex-col gap-2">
+			<form onsubmit={addList} class="flex flex-col gap-2">
 				<input
 					type="text"
 					class="w-full rounded border-0 bg-gray-700 p-2"

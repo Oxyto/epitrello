@@ -66,13 +66,13 @@
 
 <div
     id="login-content"
-    class="flex h-[calc(100vh-4rem)] items-center justify-center bg-gray-100 p-8"
+    class="flex h-[calc(100vh)] items-center justify-center bg-gray-100 p-8"
 >
     <div
         id="login-form-container"
         class="max-h-[calc(100vh-6rem)] w-full max-w-md rounded bg-white p-8 shadow-lg"
     >
-        <h2 class="mb-6 text-center text-2xl font-semibold">Login to EpiTrello</h2>
+        <h2 class="mb-6 text-center text-2xl font-semibold font-mono">Login to EpiTrello</h2>
 
         {#if error}
             <div class="mb-4 rounded bg-red-100 px-3 py-2 text-sm text-red-700">
@@ -85,24 +85,24 @@
             on:submit|preventDefault={handleSubmit}
         >
             <div class="flex flex-col">
-                <label for="email" class="mb-2 font-medium">Email:</label>
                 <input
                     type="email"
                     id="email"
                     name="email"
                     class="rounded border border-gray-300 p-2"
+					placeholder="Email"
                     required
                     bind:value={email}
                 />
             </div>
 
             <div class="flex flex-col">
-                <label for="password" class="mb-2 font-medium">Password:</label>
                 <input
                     type="password"
                     id="password"
                     name="password"
                     class="rounded border border-gray-300 p-2"
+					placeholder="Password"
                     required
                     bind:value={password}
                 />
@@ -110,7 +110,7 @@
 
             <button
                 type="submit"
-                class="mt-4 rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-60"
+                class="mt-4 bg-sky-600 px-4 py-2 text-white hover:bg-sky-500 disabled:opacity-60 rounded-md"
                 disabled={loading}
             >
                 {#if loading}
@@ -120,14 +120,14 @@
                 {/if}
             </button>
         </form>
+		<div class="mt-6 border-t pt-4 text-center">
+			<p class="mb-2 text-sm text-gray-500 font-mono">Or continue with</p>
+			<a
+				href="/auth/github"
+				class="inline-flex items-center justify-center rounded bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
+			>
+				Login with GitHub
+			</a>
+		</div>
     </div>
-	<div class="mt-6 border-t pt-4 text-center">
-		<p class="mb-2 text-sm text-gray-500">Or continue with</p>
-		<a
-			href="/auth/github"
-			class="inline-flex items-center justify-center rounded bg-gray-800 px-4 py-2 text-sm font-medium text-white hover:bg-gray-900"
-		>
-			Login with GitHub
-		</a>
-	</div>
 </div>

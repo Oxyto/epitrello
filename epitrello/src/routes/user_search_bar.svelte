@@ -1,4 +1,5 @@
 <script lang="ts">
+	import EpitrelloLogo from '$lib/assets/logos/epitrello-logo.png'
 	import LogoutButton from '$lib/LogoutButton.svelte';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
@@ -58,14 +59,14 @@
 	}
 </script>
 
-<div id="user-search-bar" class="flex h-16 items-center gap-4 bg-gray-800 p-4 shadow-md">
-	<img src="/path/to/logo.svg" alt="EpiTrello Logo" class="text-white" />
-	<a href="/" class="text-white">EpiTrello</a>
-	<input type="text" placeholder="Search" class="flex-1 rounded bg-gray-700 px-4 py-2 text-white" />
-	<button type="button" class="rounded bg-blue-500 px-4 py-2 text-white hover:bg-blue-600" on:click={handleCreate}>Create</button>
-	<a href="#notifications" class="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+<div id="user-search-bar" class="flex h-16 items-center gap-4 bg-sky-500 p-4 shadow-md">
+	<a href="/"><img src={EpitrelloLogo} alt="EpiTrello Logo" class="w-12" /></a>
+	<a href="/" class="text-white font-mono text-xl">EpiTrello</a>
+	<input type="text" placeholder="Search" class="flex-1 rounded-md bg-gray-700 px-4 py-2 text-white focus:border-0" />
+	<button type="button" class="rounded-md bg-sky-400 px-4 py-2 text-white hover:bg-white hover:text-black" onclick={handleCreate}>Create</button>
+	<a href="#notifications" class="rounded-md bg-sky-600 px-4 py-2 text-white hover:bg-white hover:text-black"
 		><img src="/path/to/notification/icon.svg" alt="Notifications" /></a
 	>
-	<button type="button" class="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700" on:click={handleProfileClick}>Profile</button>
+	<button type="button" class="rounded-md bg-sky-600 px-4 py-2 text-white hover:bg-white hover:text-black" onclick={handleProfileClick}>Profile</button>
 	<LogoutButton />
 </div>
