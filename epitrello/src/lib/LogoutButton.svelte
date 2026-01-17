@@ -19,7 +19,7 @@
 {#if isLoggedIn}
 	<button
 		type="button"
-		class="rounded-md bg-sky-900 px-4 py-2 text-white hover:bg-white hover:text-black"
+		class="transition-all shadow hover:cursor-pointer rounded-md bg-sky-900 px-4 py-2 text-white hover:bg-white hover:text-black"
 		on:click={handleLogout}
 	>
 		Logout

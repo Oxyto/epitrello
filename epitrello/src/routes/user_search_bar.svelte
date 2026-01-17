@@ -59,14 +59,13 @@
 	}
 </script>
 
-<div id="user-search-bar" class="flex h-16 items-center gap-4 bg-sky-500 p-4 shadow-md">
-	<a href="/"><img src={EpitrelloLogo} alt="EpiTrello Logo" class="w-12" /></a>
-	<a href="/" class="text-white font-mono text-xl">EpiTrello</a>
+<div id="user-search-bar" class="flex h-16 items-center gap-4 bg-sky-600 p-4 shadow-lg">
+	<a href="/" class="flex flex-row gap-2 items-center select-none" draggable="false"><img src={EpitrelloLogo} alt="EpiTrello Logo" class="w-12" draggable="false"/><p class="text-white font-mono text-xl">EpiTrello</p></a>
 	<input type="text" placeholder="Search" class="flex-1 rounded-md bg-gray-700 px-4 py-2 text-white focus:border-0" />
-	<button type="button" class="rounded-md bg-sky-400 px-4 py-2 text-white hover:bg-white hover:text-black" onclick={handleCreate}>Create</button>
-	<a href="#notifications" class="rounded-md bg-sky-600 px-4 py-2 text-white hover:bg-white hover:text-black"
+	<button type="button" class="hover:cursor-pointer shadow rounded-md bg-sky-400 px-4 py-2 text-white hover:bg-white hover:text-black transition-all" onclick={handleCreate}>Create</button>
+	<a href="#notifications" class="hover:cursor-pointer shadow rounded-md bg-sky-500 px-4 py-2 text-white hover:bg-white hover:text-black transition-all"
 		><img src="/path/to/notification/icon.svg" alt="Notifications" /></a
 	>
-	<button type="button" class="rounded-md bg-sky-600 px-4 py-2 text-white hover:bg-white hover:text-black" onclick={handleProfileClick}>Profile</button>
+	<button type="button" class="hover:cursor-pointer shadow rounded-md bg-sky-500 px-4 py-2 text-white hover:bg-white hover:text-black transition-all" onclick={handleProfileClick}>Profile</button>
 	<LogoutButton />
 </div>

@@ -18,7 +18,7 @@
 			class="mx-auto mt-6"
 		/>
 	</div>
-	<div id="footer" class="w-full bg-sky-950 p-4 text-center text-white">
+	<div id="footer" class="w-full bg-sky-950 p-4 text-center text-white select-none">
 		<p>&copy; 2025 Epitrello. All rights reserved.</p>
 	</div>
 </div>
