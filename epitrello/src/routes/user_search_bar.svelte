@@ -1,8 +1,10 @@
 <script lang="ts">
-	import EpitrelloLogo from '$lib/assets/logos/epitrello-logo.png'
+	import EpitrelloLogo from '$lib/assets/logos/epitrello-logo.png';
 	import LogoutButton from '$lib/LogoutButton.svelte';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
+
+	export const user = JSON.parse(localStorage.getItem('user') ?? '');
 
 	async function handleCreate() {
 		if (!browser) return;
@@ -34,7 +36,8 @@
 		const board = await res.json();
 		goto(`/b/${board.id}`);
 	}
-		function handleProfileClick() {
+
+	function handleProfileClick() {
 		if (!browser) return;
 
 		const raw = localStorage.getItem('user');
@@ -60,12 +63,29 @@
 </script>
 
 <div id="user-search-bar" class="flex h-16 items-center gap-4 bg-sky-600 p-4 shadow-lg">
-	<a href="/" class="flex flex-row gap-2 items-center select-none" draggable="false"><img src={EpitrelloLogo} alt="EpiTrello Logo" class="w-12" draggable="false"/><p class="text-white font-mono text-xl">EpiTrello</p></a>
-	<input type="text" placeholder="Search" class="flex-1 rounded-md bg-gray-700 px-4 py-2 text-white focus:border-0" />
-	<button type="button" class="hover:cursor-pointer shadow rounded-md bg-sky-400 px-4 py-2 text-white hover:bg-white hover:text-black transition-all" onclick={handleCreate}>Create</button>
-	<a href="#notifications" class="hover:cursor-pointer shadow rounded-md bg-sky-500 px-4 py-2 text-white hover:bg-white hover:text-black transition-all"
+	<a href="/u/{user.id}" class="flex flex-row items-center gap-2 select-none" draggable="false"
+		><img src={EpitrelloLogo} alt="EpiTrello Logo" class="w-12" draggable="false" />
+		<p class="font-mono text-xl text-white">EpiTrello</p></a
+	>
+	<input
+		type="text"
+		placeholder="Search"
+		class="flex-1 rounded-md bg-gray-700 px-4 py-2 text-white focus:border-0"
+	/>
+	<button
+		type="button"
+		class="rounded-md bg-sky-400 px-4 py-2 text-white shadow transition-all hover:cursor-pointer hover:bg-white hover:text-black"
+		onclick={handleCreate}>Create</button
+	>
+	<a
+		href="#notifications"
+		class="rounded-md bg-sky-500 px-4 py-2 text-white shadow transition-all hover:cursor-pointer hover:bg-white hover:text-black"
 		><img src="/path/to/notification/icon.svg" alt="Notifications" /></a
 	>
-	<button type="button" class="hover:cursor-pointer shadow rounded-md bg-sky-500 px-4 py-2 text-white hover:bg-white hover:text-black transition-all" onclick={handleProfileClick}>Profile</button>
+	<button
+		type="button"
+		class="rounded-md bg-sky-500 px-4 py-2 text-white shadow transition-all hover:cursor-pointer hover:bg-white hover:text-black"
+		onclick={handleProfileClick}>Profile</button
+	>
 	<LogoutButton />
 </div>

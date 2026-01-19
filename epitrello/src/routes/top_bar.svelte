@@ -5,7 +5,7 @@
 
 <div
 	id="top-bar"
-	class="sticky top-0 flex h-16 items-center gap-4 bg-sky-600 p-4 text-white shadow-lg shadow-gray-400"
+	class="sticky top-0 flex h-16 items-center gap-4 bg-sky-600 p-4 text-white shadow-lg"
 >
 	<a href="https://intra.epitech.eu/" class="flex flex-row items-center hover:cursor-pointer">
 		<img id="epitrello-logo" src={epitrello_logo} alt="Epitrello Logo" class="w-12" />
