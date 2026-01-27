@@ -5,7 +5,7 @@ export const CardSchema = z.object({
 	list: z.uuidv7(),
 	name: z.string(),
 	description: z.string(),
-    order: z.number(),
+    order: z.coerce.number().default(0),
 	date: z.union([z.date(), z.literal('')]),
 	tags: z.array(z.uuidv7()).optional(),
 	assignees: z.array(z.uuidv7()).optional(),

@@ -4,7 +4,7 @@ import { BoardSchema, type IBoard } from '$lib/interfaces/IBoard';
 import { ListSchema, type IList } from '$lib/interfaces/IList';
 import { TagSchema, type ITag } from '$lib/interfaces/ITag';
 import { CardSchema, type ICard } from '$lib/interfaces/ICard';
-import type { UUID } from 'crypto';
+export type UUID = string;
 
 export const rdb = new RedisClient(process.env.REDIS_URL);
 
@@ -18,6 +18,10 @@ export class UserConnector {
 			password_hash: user.password_hash ?? '',
 			profile_picture_url: user.profile_picture_url ?? ''
 		});
+
+		if (user.email) {
+			await rdb.set(`user_email:${user.email.toLowerCase()}`, user.uuid);
+		}
 
 		if (user.boards) {
 			await Promise.all(user.boards.map((board) => rdb.sadd(`user:${user.uuid}:boards`, board)));
@@ -50,6 +54,19 @@ export class UserConnector {
 		);
 	}
 
+		static async getByEmail(email: string): Promise<IUser | null> {
+		const uuid = await rdb.get(`user_email:${email.toLowerCase()}`);
+		if (!uuid) return null;
+
+		const user_query = await rdb.hgetall(`user:${uuid}`);
+		if (!user_query) return null;
+
+		const user = UserSchema.parse(user_query);
+		user.boards = await rdb.smembers(`user:${user.uuid}:boards`);
+
+		return user;
+	}
+
 	static async del(userId: UUID) {
 		const boards_query = await rdb.smembers(`user:${userId}:boards`);
 
@@ -72,6 +89,7 @@ export class BoardConnector {
 			theme: 'default'
 		});
 
+		await rdb.sadd(`user:${ownerId}:boards`, uuid);
 		return uuid as UUID;
 	}
 
@@ -134,7 +152,8 @@ export class BoardConnector {
 	}
 
 	static async del(boardId: UUID) {
-		const lists_query = await rdb.smembers(`boards:${boardId}:lists`);
+		const lists_query = await rdb.smembers(`board:${boardId}:lists`);
+
 
 		if (lists_query) {
 			await Promise.all(lists_query.map((listId) => ListConnector.del(listId as UUID)));
@@ -150,7 +169,7 @@ export class BoardConnector {
 }
 
 export class ListConnector {
-	static async create(boardId: UUID, name: string) {
+		static async create(boardId: UUID, name: string) {
 		const uuid = randomUUIDv7();
 
 		await rdb.hset(`list:${uuid}`, {
@@ -159,6 +178,7 @@ export class ListConnector {
 			board: boardId,
 			order: 100
 		});
+		await rdb.sadd(`board:${boardId}:lists`, uuid);
 
 		return uuid as UUID;
 	}
@@ -189,14 +209,17 @@ export class ListConnector {
 		return list;
 	}
 
-	static async del(listId: UUID) {
-		const cards_query = await rdb.smembers(`list:${listId}:cards`);
+static async del(listId: UUID) {
+	const cards_query = await rdb.smembers(`list:${listId}:cards`);
 
-		if (cards_query) {
-			await Promise.all(cards_query.map((cardId) => CardConnector.del(cardId as UUID)));
-		}
-		await rdb.del(`list:${listId}`);
+	if (cards_query && cards_query.length > 0) {
+		await Promise.all(cards_query.map((cardId) => CardConnector.del(cardId as UUID)));
 	}
+	await Promise.all([
+		rdb.del(`list:${listId}`),
+		rdb.del(`list:${listId}:cards`)
+	]);
+}
 }
 
 export class CardConnector {
@@ -252,18 +275,30 @@ export class CardConnector {
 		return Promise.all(cards_query.map((cardId) => CardConnector.get(cardId as UUID)));
 	}
 
-	static async del(cardId: UUID) {
-		const tags_query = await rdb.smembers(`card:${cardId}:tags`);
+static async del(cardId: UUID) {
+    // Récupérer la carte pour connaître sa liste
+    const cardData = await rdb.hgetall(`card:${cardId}`);
+    const listId = cardData?.list;
 
-		if (tags_query) {
-			await Promise.all(tags_query.map((tagId) => TagConnector.del(tagId as UUID)));
-		}
-		await Promise.all([
-			rdb.del(`card:${cardId}`),
-			rdb.del(`card:${cardId}:assignees`),
-			rdb.del(`card:${cardId}:tags`)
-		]);
-	}
+    // Récupérer les tags liés pour les supprimer proprement
+    const tags_query = await rdb.smembers(`card:${cardId}:tags`);
+
+    if (tags_query && tags_query.length > 0) {
+      await Promise.all(tags_query.map((tagId) => TagConnector.del(tagId as UUID)));
+    }
+
+    // Supprimer les clés de la carte
+    await Promise.all([
+      rdb.del(`card:${cardId}`),
+      rdb.del(`card:${cardId}:assignees`),
+      rdb.del(`card:${cardId}:tags`)
+    ]);
+
+    // Enlever la carte de l'ensemble des cartes de la liste
+    if (listId) {
+      await rdb.srem(`list:${listId}:cards`, cardId);
+    }
+  }
 }
 
 export class TagConnector {
@@ -278,6 +313,9 @@ export class TagConnector {
 			color
 		});
 
+		// 🔗 On relie le tag à la carte
+		await rdb.sadd(`card:${cardId}:tags`, uuid);
+
 		return uuid;
 	}
 
@@ -288,7 +326,7 @@ export class TagConnector {
 			name: tag.name,
 			type: tag.type,
 			color: tag.color
-		})
+		});
 	}
 
 	static async get(tagId: UUID) {
@@ -304,10 +342,91 @@ export class TagConnector {
 	static async getAllByCardId(cardId: UUID) {
 		const tags_query = await rdb.smembers(`card:${cardId}:tags`);
 
-		return Promise.all(tags_query.map((tagId) => TagConnector.get(tagId as UUID)));
+		const tags = await Promise.all(tags_query.map((tagId) => TagConnector.get(tagId as UUID)));
+		return tags.filter((t): t is ITag => t !== null);
 	}
 
-	static async del(tagId: UUID) {
-		await Promise.all([rdb.del(`tag:${tagId}`), rdb.del(`tag:${tagId}:attributes`)]);
-	}
+static async del(tagId: UUID) {
+    // On récupère la tag pour connaître la carte à laquelle elle est liée
+    const tagData = await rdb.hgetall(`tag:${tagId}`);
+
+    const cardId = tagData?.card;
+    if (cardId) {
+      // On enlève la référence dans l'ensemble des tags de la carte
+      await rdb.srem(`card:${cardId}:tags`, tagId);
+    }
+
+    // On supprime la tag elle-même
+    await Promise.all([
+      rdb.del(`tag:${tagId}`),
+      rdb.del(`tag:${tagId}:attributes`)
+    ]);
+  }
+}
+
+export async function getFullBoard(boardId: UUID) {
+  try {
+    const board = await BoardConnector.get(boardId);
+    if (!board) return null;
+
+    const listIds = board.lists ?? [];
+
+    const lists = (
+      await Promise.all(
+        listIds.map(async (listId) => {
+          const list = await ListConnector.get(listId as UUID);
+          if (!list) return null;
+
+          // Toutes les cartes de la liste (via le connecteur)
+          const cardsRaw = await CardConnector.getByListId(list.uuid as UUID);
+
+          // Pour chaque carte, on va chercher les tags et on renvoie seulement les noms
+          const cards = await Promise.all(
+            (cardsRaw ?? [])
+              .filter((c): c is ICard => c !== null)
+              .map(async (card) => {
+                let tagNames: string[] = [];
+
+                try {
+                  const tagsRaw = await TagConnector.getAllByCardId(card.uuid as UUID);
+                  tagNames =
+                    (tagsRaw ?? [])
+                      .filter((t): t is ITag => t !== null)
+                      .map((t) => t.name);
+                } catch (err) {
+                  console.error(
+                    'getFullBoard: erreur chargement tags pour la carte',
+                    card.uuid,
+                    err
+                  );
+                }
+
+                return {
+                  uuid: card.uuid,
+                  name: card.name,
+                  description: card.description,
+                  order: card.order,
+                  date: card.date,
+                  // 👉 l’UI recevra un simple tableau de strings
+                  tags: tagNames
+                };
+              })
+          );
+
+          return {
+            uuid: list.uuid,
+            name: list.name,
+            board: list.board,
+            order: list.order,
+            cards
+          };
+        })
+      )
+    ).filter((l) => l !== null);
+
+    return { board, lists };
+  } catch (err) {
+    console.error('getFullBoard: fatal error', err);
+    throw err;
+  }
 }
