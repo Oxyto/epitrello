@@ -1,23 +1,30 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
+	import { onMount } from 'svelte';
 
-	if (browser) {
-		const url = new URL(window.location.href);
+	const { url } = $props();
 
-		const id = url.searchParams.get('id');
-		const email = url.searchParams.get('email') ?? '';
-		const name = url.searchParams.get('name') ?? '';
+	onMount(() => {
+		if (!browser) return;
 
-		if (id) {
-			const user = { id, email, name };
-			localStorage.setItem('authToken', 'github-' + id);
-			localStorage.setItem('user', JSON.stringify(user));
-			goto(`/u/${id}`);
-		} else {
+		const search = url.searchParams;
+		const id = search.get('id');
+		const email = search.get('email') ?? '';
+		const name = search.get('name') ?? '';
+
+		if (!id) {
 			goto('/login?error=github_user');
+			return;
 		}
-	}
+
+		const user = { id, email, name };
+
+		localStorage.setItem('user', JSON.stringify(user));
+		localStorage.setItem('authToken', 'github-' + Date.now());
+
+		goto(`/u/${id}#profile`);
+	});
 </script>
 
-<p>Connexion via GitHub en cours...</p>
+<p class="p-4 text-gray-600">Connexion GitHub en cours...</p>
