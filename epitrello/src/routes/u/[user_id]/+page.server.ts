@@ -1,25 +1,29 @@
-import { getUserById, getBoardsByOwnerId } from '$lib/server/fakeDb';
 import type { PageServerLoad } from './$types';
+import { error } from '@sveltejs/kit';
+import type { UUID } from 'crypto';
+import { UserConnector, BoardConnector } from '$lib/server/redisConnector';
 
 export const load: PageServerLoad = async ({ params }) => {
-    const userId = params.user_id;
+	const userId = params.user_id as UUID;
 
-    const user = getUserById(userId);
-    const boards = getBoardsByOwnerId(userId);
-    
-    if (!user) {
-        return {
-            user_id: userId,
-            email: null,
-            name: null,
-            boards
-        };
-    }
+	const user = await UserConnector.get(userId);
+	if (!user) {
+		throw error(404, 'User not found');
+	}
 
-    return {
-        user_id: user.id,
-        email: user.email,
-        name: user.name,
-        boards
-    };
-}
+	const boards = await BoardConnector.getAllByOwnerId(userId);
+
+	const slimBoards =
+		boards?.map((b) => ({
+			uuid: b!.uuid,
+			name: b!.name,
+			owner: b!.owner
+		})) ?? [];
+
+	return {
+		user_id: user.uuid,
+		email: user.email,
+		name: user.username ?? null,
+		boards: slimBoards
+	};
+};
