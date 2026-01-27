@@ -1,0 +1,57 @@
+import type { RequestHandler } from './$types';
+import { json, error } from '@sveltejs/kit';
+import { TagConnector, rdb, type UUID } from '$lib/server/redisConnector';
+
+export const POST: RequestHandler = async ({ request }) => {
+	const { cardId, name } = await request.json();
+
+	if (!cardId || !name) {
+		throw error(400, 'cardId and name required');
+	}
+
+	try {
+		const tagId = await TagConnector.create(cardId as UUID, name, 'label', 'gray');
+
+		await rdb.sadd(`card:${cardId}:tags`, tagId);
+
+		return json({ id: tagId, name });
+	} catch (err) {
+		console.error('create tag failed', err);
+		throw error(500, 'create tag failed');
+	}
+};
+
+export const DELETE: RequestHandler = async ({ request }) => {
+  let body: any;
+
+  try {
+    body = await request.json();
+  } catch {
+    throw error(400, 'JSON body required');
+  }
+
+  const cardId = body?.cardId as string | undefined;
+  const name = body?.name as string | undefined;
+
+  if (!cardId || !name) {
+    throw error(400, 'cardId and name required');
+  }
+
+  try {
+    const tagIds = await rdb.smembers(`card:${cardId}:tags`);
+
+    for (const tagId of tagIds) {
+      const tagName = await rdb.hget(`tag:${tagId}`, 'name');
+
+      if (tagName === name) {
+        await rdb.srem(`card:${cardId}:tags`, tagId);
+        await rdb.del(`tag:${tagId}`);
+      }
+    }
+
+    return json({ ok: true });
+  } catch (e) {
+    console.error('Erreur delete tag', e);
+    throw error(500, 'delete tag failed');
+  }
+};

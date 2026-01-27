@@ -1,38 +1,70 @@
-import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { createBoard, getBoardsByOwnerId, deleteBoard} from '$lib/server/fakeDb';
+import { json, error } from '@sveltejs/kit';
+import { rdb } from '$lib/server/redisConnector';
+import type { UUID } from 'crypto';
+import { UserConnector, BoardConnector } from '$lib/server/redisConnector';
 
 export const POST: RequestHandler = async ({ request }) => {
-    const body = await request.json().catch(() => null);
+	const body = await request.json().catch(() => null);
 
-    if (!body || !body.ownerId || !body.name) {
-        return json({ error: 'ownerId et name requis' }, { status: 400 });
-    }
+	if (!body || !body.ownerId || !body.name) {
+		return json({ error: 'ownerId et name sont requis' }, { status: 400 });
+	}
 
-    const board = createBoard(String(body.ownerId), String(body.name));
-    return json(board);
+	const ownerId = body.ownerId as UUID;
+	const name = String(body.name).trim();
+
+	if (!name) {
+		return json({ error: 'Le nom du board ne peut pas être vide' }, { status: 400 });
+	}
+
+	const user = await UserConnector.get(ownerId);
+	if (!user) {
+		return json({ error: 'Utilisateur introuvable' }, { status: 404 });
+	}
+
+	const uuid = await BoardConnector.create(ownerId, name); 
+	const board = await BoardConnector.get(uuid as UUID);
+	if (!board) {
+		return json(
+			{
+				uuid,
+				name,
+				owner: ownerId
+			},
+			{ status: 201 }
+		);
+	}
+
+	return json(
+		{
+			uuid: board.uuid,
+			name: board.name,
+			owner: board.owner
+		},
+		{ status: 201 }
+	);
 };
+export const PATCH: RequestHandler = async ({ request }) => {
+	const { boardId, name } = await request.json();
 
-export const GET: RequestHandler = async ({ url }) => {
-    const ownerId = url.searchParams.get('ownerId');
-    if (!ownerId) {
-        return json({ error: 'ownerId requis' }, { status: 400 });
-    }
+	if (!boardId || !name) {
+		throw error(400, 'boardId and name required');
+	}
 
-    const boards = getBoardsByOwnerId(ownerId);
-    return json({ boards });
+	await rdb.hset(`board:${boardId}`, { name });
+
+	return json({ ok: true });
 };
 
 export const DELETE: RequestHandler = async ({ url }) => {
-    const id = url.searchParams.get('id');
-    if (!id) {
-        return json({ error: 'id requis' }, { status: 400 });
-    }
+	const id = url.searchParams.get('id');
 
-    const ok = deleteBoard(id);
-    if (!ok) {
-        return json({ error: 'Board not found' }, { status: 404 });
-    }
+	if (!id) {
+		return json({ error: 'Paramètre id manquant' }, { status: 400 });
+	}
 
-    return json({ success: true });
+	await BoardConnector.del(id as UUID);
+
+	return json({ ok: true });
 };
