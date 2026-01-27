@@ -1,4 +1,5 @@
 <script lang="ts">
+	import '../app.css';
 	import TopBar from './top_bar.svelte';
 </script>
 
