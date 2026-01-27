@@ -1,11 +1,22 @@
 <script lang="ts">
-    import LogoutButton from '$lib/LogoutButton.svelte';
+
     import UserSearchBar from '../../user_search_bar.svelte';
     import { browser } from '$app/environment';
     import { goto } from '$app/navigation';
     import { onMount } from 'svelte';
 
-    const { data } = $props();
+    	const { data } = $props<{
+		data: {
+			user_id: string;
+			email: string;
+			name: string | null;
+			boards: Array<{
+				uuid: string;
+				name: string;
+				owner: string;
+			}>;
+		};
+	}>();
 
     let ready = $state(false);
 
@@ -40,11 +51,11 @@
         ready = true;
     });
 
-    async function handleDeleteBoard(id: string) {
+    async function handleDeleteBoard(uuid: string) {
         const confirmDelete = confirm('Supprimer ce board ?');
         if (!confirmDelete) return;
 
-        const res = await fetch(`/api/boards?id=${id}`, { method: 'DELETE' });
+        const res = await fetch(`/api/boards?id=${uuid}`, { method: 'DELETE' });
 
         if (!res.ok) {
             console.error('Erreur suppression board', await res.text());
@@ -54,6 +65,7 @@
         window.location.reload();
     }
 </script>
+
 {#if ready}
     <UserSearchBar />
 
@@ -76,22 +88,27 @@
             {#if data.boards && data.boards.length}
                 <ul class="flex flex-wrap gap-3">
                     {#each data.boards as board}
-                        <li class="w-48 rounded bg-gray-800 p-3 text-white shadow">*
-                            <div class="flex items-center justify-between gap-2"> 
-                                <a href={`/b/${board.id}`} class="block hover:underline">
+                        <!-- j'ai enlevé le * ici -->
+                        <li class="w-48 rounded bg-gray-800 p-3 text-white shadow">
+                            <div class="flex items-center justify-between gap-2">
+                                <!-- ICI : lien vers la page du board -->
+                                <a
+                                    href={`/b/${board.uuid}`}
+                                    class="block hover:underline"
+                                >
                                     {board.name}
                                 </a>
                                 <button
                                     type="button"
                                     class="rounded bg-red-600 px-2 py-1 text-xs hover:bg-red-500"
-                                    onclick={() => handleDeleteBoard(board.id)}
+                                    on:click={() => handleDeleteBoard(board.uuid)}
                                     title="Supprimer ce board"
                                 >
                                     ✕
                                 </button>
                             </div>
                             <p class="mt-1 text-xs text-gray-300">
-                                ID: {board.id}
+                                ID: {board.uuid}
                             </p>
                         </li>
                     {/each}
@@ -106,11 +123,10 @@
         <section class="mt-6">
             <h2 class="mb-2 text-lg font-semibold">Debug data</h2>
             <pre class="rounded bg-gray-100 p-3 text-xs">
-    {JSON.stringify(data, null, 2)}
+{JSON.stringify(data, null, 2)}
             </pre>
         </section>
     </div>
 {:else}
-    <!-- Optionnel : écran blanc ou petit message -->
     <p class="p-4 text-gray-500">Redirection...</p>
 {/if}

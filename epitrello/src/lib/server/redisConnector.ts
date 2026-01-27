@@ -276,25 +276,19 @@ export class CardConnector {
 	}
 
 static async del(cardId: UUID) {
-    // Récupérer la carte pour connaître sa liste
     const cardData = await rdb.hgetall(`card:${cardId}`);
     const listId = cardData?.list;
-
-    // Récupérer les tags liés pour les supprimer proprement
     const tags_query = await rdb.smembers(`card:${cardId}:tags`);
 
     if (tags_query && tags_query.length > 0) {
       await Promise.all(tags_query.map((tagId) => TagConnector.del(tagId as UUID)));
     }
-
-    // Supprimer les clés de la carte
     await Promise.all([
       rdb.del(`card:${cardId}`),
       rdb.del(`card:${cardId}:assignees`),
       rdb.del(`card:${cardId}:tags`)
     ]);
 
-    // Enlever la carte de l'ensemble des cartes de la liste
     if (listId) {
       await rdb.srem(`list:${listId}:cards`, cardId);
     }
@@ -313,7 +307,6 @@ export class TagConnector {
 			color
 		});
 
-		// 🔗 On relie le tag à la carte
 		await rdb.sadd(`card:${cardId}:tags`, uuid);
 
 		return uuid;
@@ -347,16 +340,13 @@ export class TagConnector {
 	}
 
 static async del(tagId: UUID) {
-    // On récupère la tag pour connaître la carte à laquelle elle est liée
     const tagData = await rdb.hgetall(`tag:${tagId}`);
 
     const cardId = tagData?.card;
     if (cardId) {
-      // On enlève la référence dans l'ensemble des tags de la carte
       await rdb.srem(`card:${cardId}:tags`, tagId);
     }
 
-    // On supprime la tag elle-même
     await Promise.all([
       rdb.del(`tag:${tagId}`),
       rdb.del(`tag:${tagId}:attributes`)
@@ -377,10 +367,7 @@ export async function getFullBoard(boardId: UUID) {
           const list = await ListConnector.get(listId as UUID);
           if (!list) return null;
 
-          // Toutes les cartes de la liste (via le connecteur)
           const cardsRaw = await CardConnector.getByListId(list.uuid as UUID);
-
-          // Pour chaque carte, on va chercher les tags et on renvoie seulement les noms
           const cards = await Promise.all(
             (cardsRaw ?? [])
               .filter((c): c is ICard => c !== null)
@@ -407,7 +394,6 @@ export async function getFullBoard(boardId: UUID) {
                   description: card.description,
                   order: card.order,
                   date: card.date,
-                  // 👉 l’UI recevra un simple tableau de strings
                   tags: tagNames
                 };
               })
