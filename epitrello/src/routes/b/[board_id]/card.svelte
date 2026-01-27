@@ -1,133 +1,119 @@
 <script lang="ts">
-	import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher } from 'svelte';
 
-	export let card: {
-		id: number;
-		title: string;
-		tags?: string[];
-	};
+  const { card, listIndex, cardIndex } = $props<{
+	card: { uuid?: string; id: number; title: string; tags?: string[] };
+	listIndex: number;
+	cardIndex: number;
+	}>();
 
-	export let listIndex: number;
-	export let cardIndex: number;
+const dispatch = createEventDispatcher<{
+	updateTitle: { listIndex: number; cardIndex: number; title: string };
+	deleteCard: { listIndex: number; cardIndex: number };
+	addTag: { listIndex: number; cardIndex: number; tag: string };
+	moveCard: { listIndex: number; cardIndex: number; direction: number };
+	removeTag: { cardId: number; tag: string };
+	}>();
 
-	const dispatch = createEventDispatcher();
+  let title = card.title;
+  let newTag = '';
 
-	let editing = false;
-	let editedTitle = card.title;
-	let newTag = '';
+  function handleTitleBlur() {
+    const t = title.trim();
+    if (!t || t === card.title) return;
 
-	function startEdit() {
-		editing = true;
-		editedTitle = card.title;
-	}
+    dispatch('updateTitle', { listIndex, cardIndex, title: t });
+  }
 
-	function saveTitle() {
-		const title = editedTitle.trim();
-		if (!title) return;
-		dispatch('updateTitle', { listIndex, cardIndex, title });
-		editing = false;
-	}
+  function handleDelete() {
+    dispatch('deleteCard', { listIndex, cardIndex });
+  }
 
-	function submitTag() {
-		const tag = newTag.trim();
-		if (!tag) return;
-		dispatch('addTag', { listIndex, cardIndex, tag });
-		newTag = '';
-	}
+  function handleMove(direction: number) {
+    dispatch('moveCard', { listIndex, cardIndex, direction });
+  }
 
-	function moveLeft() {
-		dispatch('moveCard', { listIndex, cardIndex, direction: -1 });
-	}
+	function handleRemoveTag(tag: string) {
+    dispatch('removeTag', { cardId: card.id, tag });
+  }
 
-	function moveRight() {
-		dispatch('moveCard', { listIndex, cardIndex, direction: 1 });
-	}
+  function handleAddTag() {
+    const t = newTag.trim();
+    if (!t) return;
 
-	function deleteCard() {
-		dispatch('deleteCard', { listIndex, cardIndex });
-	}
-
+    dispatch('addTag', { listIndex, cardIndex, tag: t });
+    newTag = '';
+  }
 </script>
 
-<li class="flex flex-col gap-2 rounded bg-gray-700 p-2" draggable="false">
-	<div class="flex items-center gap-2">
-		<input
-			type="checkbox"
-			class="rounded-4xl mr-2 hover:cursor-pointer"
-			title="Mark as complete"
-		/>
+<li class="rounded bg-gray-700 p-3 shadow">
+  <div class="mb-2 flex items-center gap-2">
+    <input type="checkbox" class="h-4 w-4" />
 
-		{#if editing}
-			<input
-				class="flex-1 rounded border-0 bg-gray-600 px-2 py-1 text-sm"
-				bind:value={editedTitle}
-				on:keydown={(e) => e.key === 'Enter' && saveTitle()}
-				on:blur={saveTitle}
-				autofocus
-			/>
-		{:else}
-			<a
-				class="flex-1 select-none rounded border-0 bg-gray-700 px-2 py-1 text-sm hover:bg-gray-600"
-				href={`#c-${card.id}`}
-				on:dblclick={startEdit}
-				title="Double-click pour éditer"
-			>
-				{card.title}
-			</a>
-		{/if}
-	</div>
+    <input
+      class="flex-1 rounded border-0 bg-gray-700 text-sm font-semibold text-white focus:bg-gray-600 focus:outline-none"
+      bind:value={title}
+      on:blur={handleTitleBlur}
+    />
 
-	{#if card.tags && card.tags.length}
-		<div class="flex flex-wrap gap-1">
-			{#each card.tags as tag}
-				<span class="rounded-full bg-gray-500 px-2 py-0.5 text-xs">
-					{tag}
-				</span>
-			{/each}
-		</div>
-	{/if}
+    <button
+      type="button"
+      class="rounded bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-500"
+      on:click={handleDelete}
+    >
+      Delete
+    </button>
+  </div>
 
-	<div class="mt-1 flex gap-2">
-		<input
-			type="text"
-			class="flex-1 rounded border-0 bg-gray-600 px-2 py-1 text-xs"
-			placeholder="New tag..."
-			bind:value={newTag}
-			on:keydown={(e) => e.key === 'Enter' && submitTag()}
-		/>
-		<button
-			class="rounded bg-gray-600 px-2 text-xs hover:bg-gray-500"
-			type="button"
-			on:click={submitTag}
-		>
-			+ Tag
-		</button>
-	</div>
+  {#if card.tags && card.tags.length}
+    <div class="mb-2 flex flex-wrap gap-1">
+      {#each card.tags as tag}
+       <span class="inline-flex items-center gap-1 rounded bg-gray-500 px-2 py-0.5 text-xs text-white">
+        <span>{tag}</span>
+        <button
+          type="button"
+          class="rounded bg-gray-700 px-1 text-[10px] hover:bg-gray-600"
+          on:click={() => handleRemoveTag(tag)}
+          title="Remove tag"
+        >
+          ✕
+        </button>
+      </span>
+      {/each}
+    </div>
+  {/if}
 
-	<div class="mt-1 flex items-center justify-between gap-1 text-xs text-gray-300">
-		<button
-			type="button"
-			class="rounded bg-red-600 px-2 py-0.5 hover:bg-red-500"
-			on:click={deleteCard}
-		>
-			Delete
-		</button>
+  <form class="mt-2 flex gap-2" on:submit|preventDefault={handleAddTag}>
+    <input
+      type="text"
+      class="flex-1 rounded border-0 bg-gray-600 p-1 text-xs text-white focus:outline-none"
+      placeholder="New tag..."
+      bind:value={newTag}
+    />
+    <button
+      type="submit"
+      class="rounded bg-gray-500 px-2 py-1 text-xs text-white hover:bg-gray-400"
+    >
+      + Tag
+    </button>
+  </form>
 
-		<div class="flex gap-1">
-			<button
-				type="button"
-				class="rounded bg-gray-600 px-2 py-0.5 hover:bg-gray-500"
-				on:click={moveLeft}
-			>
-				←
-			</button>
-			<button
-				type="button"
-				class="rounded bg-gray-600 px-2 py-0.5 hover:bg-gray-500"
-				on:click={moveRight}
-			>
-				→
-			</button>
-		</div>
-	</div>
+  <div class="mt-2 flex gap-2">
+    <button
+      type="button"
+      class="rounded bg-gray-500 px-2 py-1 text-xs text-white hover:bg-gray-400"
+      on:click={() => handleMove(-1)}
+      title="Move left"
+    >
+      ←
+    </button>
+    <button
+      type="button"
+      class="rounded bg-gray-500 px-2 py-1 text-xs text-white hover:bg-gray-400"
+      on:click={() => handleMove(1)}
+      title="Move right"
+    >
+      →
+    </button>
+  </div>
 </li>
