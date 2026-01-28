@@ -1,5 +1,4 @@
 <script lang="ts">
-
     import UserSearchBar from '../../user_search_bar.svelte';
     import { browser } from '$app/environment';
     import { goto } from '$app/navigation';
@@ -69,63 +68,41 @@
 {#if ready}
     <UserSearchBar />
 
-    <div class="p-4 text-gray-900">
-        <h1 class="mb-2 text-2xl font-bold">
-            User Page for ID: {data.user_id}
-        </h1>
-
-        {#if data.email}
-            <p>Email : {data.email}</p>
-        {/if}
-
-        {#if data.name}
-            <p>Nom : {data.name}</p>
-        {/if}
-
-        <section class="mt-6">
-            <h2 class="mb-2 text-xl font-semibold">Mes boards</h2>
-
+    <div class="ml-64 mr-64 my-16 text-gray-900 bg-gray-200 rounded-md p-4 items-center">
+            <h2 class="mb-2 text-xl font-mono font-bold select-none">Mes boards</h2>
             {#if data.boards && data.boards.length}
                 <ul class="flex flex-wrap gap-3">
                     {#each data.boards as board}
                         <!-- j'ai enlevé le * ici -->
-                        <li class="w-48 rounded bg-gray-800 p-3 text-white shadow">
+                        <li class="w-48 rounded-md bg-sky-600 p-3 text-white shadow shadow-gray-400">
                             <div class="flex items-center justify-between gap-2">
                                 <!-- ICI : lien vers la page du board -->
                                 <a
                                     href={`/b/${board.uuid}`}
-                                    class="block hover:underline"
+                                    class="block hover:underline text-lg font-mono"
                                 >
                                     {board.name}
                                 </a>
                                 <button
                                     type="button"
-                                    class="rounded bg-red-600 px-2 py-1 text-xs hover:bg-red-500"
-                                    on:click={() => handleDeleteBoard(board.uuid)}
+                                    class="rounded-md hover:cursor-pointer hover:text-red-500 transition-all w-8 h-8"
+                                    onclick={() => handleDeleteBoard(board.uuid)}
                                     title="Supprimer ce board"
                                 >
-                                    ✕
+                                    X
                                 </button>
                             </div>
                             <p class="mt-1 text-xs text-gray-300">
-                                ID: {board.uuid}
+                                #{board.uuid}
                             </p>
                         </li>
                     {/each}
                 </ul>
             {:else}
-                <p class="text-sm text-gray-600">
+                <p class="text-sm font-mono text-gray-600">
                     Aucun board pour le moment. Utilise le bouton "Create" pour en créer un.
                 </p>
             {/if}
-        </section>
-
-        <section class="mt-6">
-            <h2 class="mb-2 text-lg font-semibold">Debug data</h2>
-            <pre class="rounded bg-gray-100 p-3 text-xs">
-{JSON.stringify(data, null, 2)}
-            </pre>
-        </section>
     </div>
 {:else}
     <p class="p-4 text-gray-500">Redirection...</p>

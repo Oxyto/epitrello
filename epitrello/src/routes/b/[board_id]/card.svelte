@@ -46,12 +46,16 @@ const dispatch = createEventDispatcher<{
   }
 </script>
 
-<li class="rounded bg-gray-700 p-3 shadow">
+<li class="flex flex-col gap-2 rounded bg-sky-600 p-2 text-white shadow shadow-gray-400">
   <div class="mb-2 flex items-center gap-2">
-    <input type="checkbox" class="h-4 w-4" />
+    <input
+			type="checkbox"
+			class="rounded-4xl mr-2 hover:cursor-pointer focus:outline-0 checked:bg-green-500 transition-all delay-100"
+			title="Mark as complete"
+		/>
 
     <input
-      class="flex-1 rounded border-0 bg-gray-700 text-sm font-semibold text-white focus:bg-gray-600 focus:outline-none"
+      class="flex-1 rounded border-0 bg-sky-700 text-sm font-semibold text-white focus:bg-sky-500 focus:outline-none"
       bind:value={title}
       on:blur={handleTitleBlur}
     />
@@ -61,18 +65,18 @@ const dispatch = createEventDispatcher<{
       class="rounded bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-500"
       on:click={handleDelete}
     >
-      Delete
+      X
     </button>
   </div>
 
   {#if card.tags && card.tags.length}
     <div class="mb-2 flex flex-wrap gap-1">
       {#each card.tags as tag}
-       <span class="inline-flex items-center gap-1 rounded bg-gray-500 px-2 py-0.5 text-xs text-white">
+       <span class="inline-flex items-center gap-1 rounded bg-sky-500 px-2 py-0.5 text-xs shadow select-none text-white">
         <span>{tag}</span>
         <button
           type="button"
-          class="rounded bg-gray-700 px-1 text-[10px] hover:bg-gray-600"
+          class="rounded bg-sky-700 px-1 text-[10px] hover:bg-sky-600"
           on:click={() => handleRemoveTag(tag)}
           title="Remove tag"
         >
@@ -86,13 +90,13 @@ const dispatch = createEventDispatcher<{
   <form class="mt-2 flex gap-2" on:submit|preventDefault={handleAddTag}>
     <input
       type="text"
-      class="flex-1 rounded border-0 bg-gray-600 p-1 text-xs text-white focus:outline-none"
+      class="flex-1 rounded-md border-0 bg-sky-700 px-2 py-1 font-mono placeholder:text-gray-400 shadow"
       placeholder="New tag..."
       bind:value={newTag}
     />
     <button
       type="submit"
-      class="rounded bg-gray-500 px-2 py-1 text-xs text-white hover:bg-gray-400"
+      class="rounded-md bg-sky-500 px-2 hover:bg-sky-400 shadow hover:cursor-pointer transition-all"
     >
       + Tag
     </button>
@@ -101,7 +105,7 @@ const dispatch = createEventDispatcher<{
   <div class="mt-2 flex gap-2">
     <button
       type="button"
-      class="rounded bg-gray-500 px-2 py-1 text-xs text-white hover:bg-gray-400"
+      class="rounded-md bg-sky-500 px-2 py-0.5 hover:bg-sky-400 shadow hover:cursor-pointer transition-all"
       on:click={() => handleMove(-1)}
       title="Move left"
     >
@@ -109,7 +113,7 @@ const dispatch = createEventDispatcher<{
     </button>
     <button
       type="button"
-      class="rounded bg-gray-500 px-2 py-1 text-xs text-white hover:bg-gray-400"
+      class="rounded-md bg-sky-500 px-2 py-0.5 hover:bg-sky-400 shadow hover:cursor-pointer transition-all"
       on:click={() => handleMove(1)}
       title="Move right"
     >

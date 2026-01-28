@@ -449,7 +449,7 @@ async function handleRemoveTag(e: CustomEvent<{ cardId: number; tag: string }>) 
 	<div class="min-h-[calc(100vh-4rem)] w-screen bg-gray-600 p-4">
 		<div class="mb-4 flex items-center gap-4 rounded bg-gray-100 p-4 shadow-md">
 			<input
-				class="flex-1 rounded border-0 bg-transparent text-3xl font-bold hover:bg-gray-200 focus:outline-0"
+				class="rounded border-0 bg-transparent text-3xl font-bold hover:bg-gray-200 focus:outline-0"
 				title="Board Name"
 				type="text"
 				bind:value={board_name}
@@ -466,21 +466,21 @@ async function handleRemoveTag(e: CustomEvent<{ cardId: number; tag: string }>) 
 
 		<div class="flex gap-4 overflow-x-auto p-4">
 			{#each lists as list, i}
-				<div class="min-w-[250px] rounded bg-gray-800 p-4 text-gray-200 shadow-md">
+				<div class="min-w-[250px] rounded-md bg-white p-4 text-gray-700 shadow-md">
 					<input
-						class="w-full rounded border-0 bg-gray-800 text-lg font-bold"
+						class="w-full rounded-md border-0 bg-white hover:bg-gray-200 font-mono text-lg font-bold transition-all"
 						value={list.name}
 						on:input={(e) => updateListName(i, e)}
 					/>
 					<button
 						type="button"
-						class="mt-1 rounded bg-red-600 px-2 py-1 text-xs hover:bg-red-500"
+						class="w-8 h-8 ml-2 px-2 py-1 hover:text-red-500 hover:cursor-pointer transition-all"
 						on:click={() => deleteList(i)}
 					>
 						Delete
 					</button>
 
-					<ol class="mt-4 flex flex-col gap-2 bg-gray-800">
+					<ol class="mt-4 flex flex-col gap-2 bg-white">
 						{#each list.cards as card, j}
 							<Card
 								{card}
@@ -501,14 +501,14 @@ async function handleRemoveTag(e: CustomEvent<{ cardId: number; tag: string }>) 
 					>
 						<input
 							type="text"
-							class="w-full rounded border-0 bg-gray-700 p-2 text-sm"
+							class="w-full rounded-md border-0 bg-sky-700 p-2 font-mono shadow-md shadow-gray-300 placeholder:text-gray-400 text-gray-100"
 							placeholder="New card title..."
 							value={list.newCardTitle}
 							on:input={(e) => updateListNewCardTitle(i, e)}
 						/>
 						<button
 							type="submit"
-							class="rounded bg-gray-700 px-3 text-sm hover:bg-gray-600"
+							class="w-24 rounded-md bg-sky-500 px-3 text-white shadow-md shadow-gray-300 hover:bg-sky-400 hover:cursor-pointer transition-all"
 						>
 							+ Add
 						</button>
@@ -516,17 +516,17 @@ async function handleRemoveTag(e: CustomEvent<{ cardId: number; tag: string }>) 
 				</div>
 			{/each}
 
-			<div class="min-w-[250px] rounded bg-gray-800 p-4 text-gray-200 shadow-md">
+			<div class="min-w-[250px] rounded-md bg-white p-4 text-white shadow-md">
 				<form on:submit|preventDefault={addList} class="flex flex-col gap-2">
 					<input
 						type="text"
-						class="w-full rounded border-0 bg-gray-700 p-2"
+						class="w-full rounded-md border-0 bg-sky-700 p-2 font-mono shadow shadow-gray-300 placeholder:text-gray-400"
 						placeholder="New list name..."
 						bind:value={newListName}
 					/>
 					<button
 						type="submit"
-						class="w-full rounded bg-gray-700 px-4 py-2 hover:bg-gray-600"
+						class="w-full rounded-md bg-sky-500 px-4 py-2 shadow shadow-gray-300 hover:bg-sky-400 hover:cursor-pointer transition-all"
 					>
 						+ Add List
 					</button>
