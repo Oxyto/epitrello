@@ -5,7 +5,6 @@ import { UserConnector } from '$lib/server/redisConnector';
 import type { UUID } from 'crypto';
 import { randomUUIDv7 } from 'bun';
 
-// même principe que pour GitHub
 const redirectUri = 'http://localhost:5173/auth/microsoft/callback';
 
 export const GET: RequestHandler = async ({ url }) => {
@@ -32,7 +31,6 @@ export const GET: RequestHandler = async ({ url }) => {
 	}
 
 	try {
-		// 1) Échange code -> token
 		const tokenRes = await fetch(
 			`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
 			{
@@ -73,7 +71,6 @@ export const GET: RequestHandler = async ({ url }) => {
 
 		console.log('MS token OK, scopes:', tokenJson.scope);
 
-		// 2) Récup profil Microsoft /me
 		const meRes = await fetch('https://graph.microsoft.com/v1.0/me', {
 			headers: {
 				Authorization: `Bearer ${accessToken}`
@@ -109,7 +106,6 @@ export const GET: RequestHandler = async ({ url }) => {
 			me.displayName ??
 			(email.includes('@') ? email.split('@')[0] : email);
 
-		// 3) User Redis (comme GitHub)
 		let user = await UserConnector.getByEmail(email);
 
 		if (!user) {
@@ -119,9 +115,9 @@ export const GET: RequestHandler = async ({ url }) => {
 				uuid: newUuid,
 				username,
 				email,
-				admin: 'no', // ⚠️ "yes" | "no" (pas boolean)
+				admin: 'no',
 				password_hash: '',
-				profile_picture_url: '', // tu pourras ajouter la photo Microsoft plus tard
+				profile_picture_url: '',
 				boards: []
 			};
 
@@ -134,7 +130,6 @@ export const GET: RequestHandler = async ({ url }) => {
 			name: user.username
 		};
 
-		// 4) Même technique que GitHub: script → localStorage
 		return new Response(
 			`<script>
 				localStorage.setItem('authToken', 'microsoft-' + Date.now());

@@ -1,4 +1,3 @@
-// src/routes/auth/microsoft/+server.ts
 import type { RequestHandler } from './$types';
 import { redirect, error } from '@sveltejs/kit';
 import {
@@ -8,7 +7,6 @@ import {
 } from '$env/static/private';
 
 export const GET: RequestHandler = async () => {
-	// Sécurité : si les env ne sont pas définies, on casse tout de suite
 	if (!MICROSOFT_CLIENT_ID || !MICROSOFT_REDIRECT_URI) {
 		console.error('Microsoft OAuth mal configuré', {
 			MICROSOFT_CLIENT_ID,
