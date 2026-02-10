@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [ main, dev ]
+    branches: [ main, develop ]
   pull_request:
     branches: [ main ]
 
@@ -13,6 +13,10 @@ jobs:
     strategy:
       matrix:
         bun-version: [latest]
+    
+    defaults:
+      run:
+        working-directory: epitrello
     
     steps:
     - name: Checkout code
@@ -34,10 +38,3 @@ jobs:
     
     - name: Build project with Vite
       run: bunx --bun vite build
-    
-    - name: Upload coverage reports
-      uses: codecov/codecov-action@v3
-      with:
-        token: ${{ secrets.CODECOV_TOKEN }}
-        files: ./coverage/coverage-final.json
-        fail_ci_if_error: true
