@@ -28,7 +28,7 @@ jobs:
         bun-version: ${{ matrix.bun-version }}
     
     - name: Install dependencies
-      run: bun install
+      run: npx bun install
     
     # Disable because of an issue with SvelteKit
     # - name: Run linter
@@ -36,8 +36,8 @@ jobs:
     #   continue-on-error: true
     
     - name: Run tests
-      run: bun test
+      run: npx bun test
       continue-on-error: true
     
     - name: Build project with Vite
-      run: bunx --bun vite build
+      run: npx bunx --bun vite build
