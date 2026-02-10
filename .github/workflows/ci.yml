@@ -30,13 +30,13 @@ jobs:
     - name: Install dependencies
       run: bun i
     
-    # - name: Run linter
-    #   run: bun run lint
-    #   continue-on-error: true
+    - name: Run linter
+      run: bun run lint
+      continue-on-error: true
     
     - name: Run tests
       run: bun test
       continue-on-error: true
     
     - name: Build project with Vite
-      run: bun run build
+      run: bun --bun vite build

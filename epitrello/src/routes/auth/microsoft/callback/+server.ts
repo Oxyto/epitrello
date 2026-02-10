@@ -3,7 +3,6 @@ import { env } from '$env/dynamic/private';
 import { redirect, isRedirect } from '@sveltejs/kit';
 import { UserConnector } from '$lib/server/redisConnector';
 import type { UUID } from 'crypto';
-import { randomUUIDv7 } from 'bun';
 
 const redirectUri = 'http://localhost:5173/auth/microsoft/callback';
 
@@ -109,7 +108,7 @@ export const GET: RequestHandler = async ({ url }) => {
 		let user = await UserConnector.getByEmail(email);
 
 		if (!user) {
-			const newUuid = randomUUIDv7() as UUID;
+			const newUuid = Bun.randomUUIDv7() as UUID;
 
 			user = {
 				uuid: newUuid,

@@ -1,6 +1,5 @@
 import type { RequestHandler } from './$types';
 import { json } from '@sveltejs/kit';
-import { randomUUIDv7 } from 'bun';
 import type { UUID } from 'crypto';
 import { UserConnector } from '$lib/server/redisConnector';
 import type { IUser } from '$lib/interfaces/IUser';
@@ -18,7 +17,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	let user = await UserConnector.getByEmail(email);
 
 	if (!user) {
-		const uuid = randomUUIDv7() as UUID;
+		const uuid = Bun.randomUUIDv7() as UUID;
 
 		user = {
 			uuid,

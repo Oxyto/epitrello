@@ -1,4 +1,3 @@
-import { RedisClient, randomUUIDv7 } from 'bun';
 import { UserSchema, type IUser } from '$lib/interfaces/IUser';
 import { BoardSchema, type IBoard } from '$lib/interfaces/IBoard';
 import { ListSchema, type IList } from '$lib/interfaces/IList';
@@ -6,7 +5,7 @@ import { TagSchema, type ITag } from '$lib/interfaces/ITag';
 import { CardSchema, type ICard } from '$lib/interfaces/ICard';
 export type UUID = string;
 
-export const rdb = new RedisClient(process.env.REDIS_URL);
+export const rdb = new Bun.RedisClient(process.env.REDIS_URL);
 
 export class UserConnector {
 	static async save(user: IUser) {
@@ -79,7 +78,7 @@ export class UserConnector {
 
 export class BoardConnector {
 	static async create(ownerId: UUID, name: string): Promise<UUID> {
-		const uuid = randomUUIDv7();
+		const uuid = Bun.randomUUIDv7();
 
 		await rdb.hset(`board:${uuid}`, {
 			uuid: uuid,
@@ -170,7 +169,7 @@ export class BoardConnector {
 
 export class ListConnector {
 		static async create(boardId: UUID, name: string) {
-		const uuid = randomUUIDv7();
+		const uuid = Bun.randomUUIDv7();
 
 		await rdb.hset(`list:${uuid}`, {
 			uuid,
@@ -224,7 +223,7 @@ static async del(listId: UUID) {
 
 export class CardConnector {
 	static async create(listId: UUID, name: string) {
-		const uuid = randomUUIDv7();
+		const uuid = Bun.randomUUIDv7();
 
 		await rdb.hset(`card:${uuid}`, {
 			uuid: uuid,
@@ -297,7 +296,7 @@ static async del(cardId: UUID) {
 
 export class TagConnector {
 	static async create(cardId: UUID, name: string, type: string, color: string) {
-		const uuid = randomUUIDv7();
+		const uuid = Bun.randomUUIDv7();
 
 		await rdb.hset(`tag:${uuid}`, {
 			uuid: uuid,
