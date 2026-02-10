@@ -28,7 +28,7 @@ jobs:
         bun-version: ${{ matrix.bun-version }}
     
     - name: Install dependencies
-      run: npx bun install
+      run: npx bun i -d
     
     # Disable because of an issue with SvelteKit
     # - name: Run linter
