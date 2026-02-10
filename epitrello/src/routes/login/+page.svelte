@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Epitrellologo from '$lib/assets/logos/epitrello-logo.png';
 	import GithubLogo from '$lib/assets/logos/github.svg';
+	import MicrosoftLogo from '$lib/assets/logos/microsoft.svg';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
@@ -168,6 +169,13 @@
 			>
 				<img src={GithubLogo} alt="GitHub Logo" class="w-6 invert" />
 				<p>Login with GitHub</p>
+			</a>
+			<a
+			href="/auth/microsoft"
+			class="inline-flex items-center gap-4 justify-center rounded-md bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-500 transition-all shadow-md w-full max-w-xs"
+			>
+			<img src={MicrosoftLogo} alt="Microsoft Logo" class="w-6" />
+			<p>Login with Microsoft</p>
 			</a>
 		</div>
 	</div>
