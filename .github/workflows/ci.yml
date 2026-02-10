@@ -28,16 +28,14 @@ jobs:
         bun-version: ${{ matrix.bun-version }}
     
     - name: Install dependencies
-      run: npx bun i -d
+      run: bun i
     
-    # Disable because of an issue with SvelteKit
     # - name: Run linter
     #   run: bun run lint
     #   continue-on-error: true
     
     - name: Run tests
-      run: npx bun test
-      continue-on-error: true
+      run: bun test
     
     - name: Build project with Vite
-      run: npx bunx --bun vite build
+      run: bun run build
