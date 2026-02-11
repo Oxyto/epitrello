@@ -38,7 +38,7 @@
 	}>();
 
 	const boardId: string | undefined = data.board?.id;
-
+	let panelTagInput = $state('');
 	let ready = $state(false);
 	let board_name = $state(data.board?.name ?? 'Board');
 
@@ -401,38 +401,44 @@ async function handleDeleteCard(
 		}
 	}
 }
+async function addTagToCard(listIndex: number, cardIndex: number, tag: string) {
+  const list = lists[listIndex];
+  if (!list || !list.cards[cardIndex]) return;
 
-	async function handleAddTag(
-		event: CustomEvent<{ listIndex: number; cardIndex: number; tag: string }>
-	) {
-		const { listIndex, cardIndex, tag } = event.detail;
+  const card = list.cards[cardIndex];
+  const cleanTag = tag.trim();
+  if (!cleanTag) return;
 
-		const list = lists[listIndex];
-		if (!list || !list.cards[cardIndex]) return;
+  if (card.tags.includes(cleanTag)) return;
 
-		const card = list.cards[cardIndex];
-		if (card.tags.includes(tag)) return;
+  card.tags.push(cleanTag);
 
-		card.tags.push(tag);
-		if (!card.uuid) return;
-		try {
-			const res = await fetch('/api/tags', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ cardId: card.uuid, name: tag })
-			});
-			if (!res.ok) {
-				console.error('Erreur API add tag', await res.text());
-			}
-		} catch (err) {
-			console.error('Erreur réseau add tag', err);
-		}
-	}
+  if (!card.uuid || !browser) return;
 
-async function handleRemoveTag(e: CustomEvent<{ cardId: number; tag: string }>) {
-  const { cardId, tag } = e.detail;
+  try {
+    const res = await fetch('/api/tags', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cardId: card.uuid, name: cleanTag })
+    });
 
+    if (!res.ok) {
+      console.error('Erreur API add tag', await res.text());
+    }
+  } catch (err) {
+    console.error('Erreur réseau add tag', err);
+  }
+}
+
+function handleAddTag(
+  event: CustomEvent<{ listIndex: number; cardIndex: number; tag: string }>
+) {
+  const { listIndex, cardIndex, tag } = event.detail;
+  void addTagToCard(listIndex, cardIndex, tag);
+}
+async function removeTagFromCard(cardId: number, tag: string) {
   let cardUuid: string | undefined;
+
   const updatedLists = lists.map((list) => {
     const cards = list.cards.map((card) => {
       if (card.id === cardId) {
@@ -444,29 +450,48 @@ async function handleRemoveTag(e: CustomEvent<{ cardId: number; tag: string }>) 
       }
       return card;
     });
-
     return { ...list, cards };
   });
 
   lists = updatedLists;
-  if (cardUuid) {
-    try {
-      const res = await fetch('/api/tags', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cardId: cardUuid, name: tag })
-      });
 
-      if (!res.ok) {
-        console.error('Erreur API delete tag', await res.text());
-      }
-    } catch (err) {
-      console.error('Erreur réseau API delete tag', err);
+  if (!cardUuid || !browser) return;
+
+  try {
+    const res = await fetch('/api/tags', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cardId: cardUuid, name: tag })
+    });
+
+    if (!res.ok) {
+      console.error('Erreur API delete tag', await res.text());
     }
-  } else {
-    console.warn('handleRemoveTag: pas de uuid sur la carte, API non appelée');
+  } catch (err) {
+    console.error('Erreur réseau API delete tag', err);
   }
 }
+
+function handleRemoveTag(e: CustomEvent<{ cardId: number; tag: string }>) {
+  const { cardId, tag } = e.detail;
+  void removeTagFromCard(cardId, tag);
+}
+async function panelAddTag() {
+  if (!selectedCardRef) return;
+
+  const tag = panelTagInput.trim();
+  if (!tag) return;
+
+  await addTagToCard(selectedCardRef.listIndex, selectedCardRef.cardIndex, tag);
+  panelTagInput = '';
+}
+
+async function panelRemoveTag(tag: string) {
+  if (!selectedCard) return;
+
+  await removeTagFromCard(selectedCard.id, tag);
+}
+
 </script>
 
 {#if ready}
@@ -507,8 +532,6 @@ async function handleRemoveTag(e: CustomEvent<{ cardId: number; tag: string }>) 
 								{card}
 								listIndex={i}
 								cardIndex={j}
-								on:addTag={handleAddTag}
-								on:removeTag={handleRemoveTag}
 								on:updateTitle={handleUpdateTitle}
 								on:moveCard={handleMoveCard}
 								on:deleteCard={handleDeleteCard}
@@ -567,13 +590,10 @@ async function handleRemoveTag(e: CustomEvent<{ cardId: number; tag: string }>) 
 					✕
 				</button>
 
-				<!-- Header -->
 				<h2 class="mb-1 text-xl font-bold">{selectedCard.title}</h2>
 				<p class="mb-4 text-sm text-gray-400">
 					in list <span class="font-semibold text-gray-200">{selectedList.name}</span>
 				</p>
-
-				<!-- Description (placeholder pour l’instant) -->
 				<section class="mb-4">
 					<h3 class="mb-1 text-sm font-semibold uppercase tracking-wide text-gray-400">
 						Description
@@ -582,22 +602,50 @@ async function handleRemoveTag(e: CustomEvent<{ cardId: number; tag: string }>) 
 						(Description à venir)
 					</p>
 				</section>
+				<div>
+					<h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+						Tags
+					</h3>
 
-				<!-- Tags en lecture seule pour l’instant -->
-				{#if selectedCard.tags?.length}
-					<section>
-						<h3 class="mb-1 text-sm font-semibold uppercase tracking-wide text-gray-400">
-							Tags
-						</h3>
-						<div class="flex flex-wrap gap-2">
-							{#each selectedCard.tags as tag}
-								<span class="rounded bg-sky-600 px-2 py-0.5 text-xs">
-									{tag}
-								</span>
-							{/each}
+					{#if selectedCard.tags && selectedCard.tags.length}
+						<div class="mb-2 flex flex-wrap gap-1">
+						{#each selectedCard.tags as tag}
+							<span
+							class="inline-flex items-center gap-1 rounded bg-sky-500 px-2 py-0.5 text-xs text-white"
+							>
+							<span>{tag}</span>
+							<button
+								type="button"
+								class="rounded bg-sky-700 px-1 text-[10px] hover:bg-red-500 hover:cursor-pointer"
+								on:click={() => panelRemoveTag(tag)}
+								title="Remove tag"
+							>
+								✕
+							</button>
+							</span>
+						{/each}
 						</div>
-					</section>
-				{/if}
+					{:else}
+						<p class="mb-2 text-xs text-gray-500 italic">
+						Aucun tag pour cette carte.
+						</p>
+					{/if}
+
+					<form class="mt-2 flex gap-2" on:submit|preventDefault={panelAddTag}>
+						<input
+						type="text"
+						class="flex-1 rounded border border-gray-700 bg-gray-800 p-1 text-xs text-gray-100 placeholder:text-gray-400"
+						placeholder="Ajouter un tag..."
+						bind:value={panelTagInput}
+						/>
+						<button
+						type="submit"
+						class="rounded bg-sky-600 px-2 py-1 text-xs text-white hover:bg-sky-500"
+						>
+						+ Tag
+						</button>
+					</form>
+				</div>
 			</div>
 		</div>
 	{/if}
