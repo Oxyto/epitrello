@@ -45,6 +45,21 @@
 	let lists = $state<UiList[]>([]);
 	let newListName = $state('');
 	let nextLocalCardId = 1;
+		let selectedCardRef = $state<{ listIndex: number; cardIndex: number } | null>(null);
+
+	const selectedList = $derived<UiList | null>(
+		selectedCardRef && lists[selectedCardRef.listIndex]
+			? lists[selectedCardRef.listIndex]
+			: null
+	);
+
+	const selectedCard = $derived<UiCard | null>(
+		selectedCardRef &&
+		selectedList &&
+		selectedList.cards[selectedCardRef.cardIndex]
+			? selectedList.cards[selectedCardRef.cardIndex]
+			: null
+	);
 
 	function applyLoadedState(payload: BoardFullResponse) {
 	if (!payload || !payload.board) return;
@@ -309,6 +324,16 @@ async function handleDeleteCard(
     console.warn('handleDeleteCard: pas de uuid sur la carte, API non appelée');
   }
 }
+	function handleOpenDetails(
+		event: CustomEvent<{ listIndex: number; cardIndex: number }>
+	) {
+		const { listIndex, cardIndex } = event.detail;
+		selectedCardRef = { listIndex, cardIndex };
+	}
+
+	function closeDetails() {
+		selectedCardRef = null;
+	}
 
 	async function handleUpdateTitle(
 	event: CustomEvent<{ listIndex: number; cardIndex: number; title: string }>
@@ -487,6 +512,7 @@ async function handleRemoveTag(e: CustomEvent<{ cardId: number; tag: string }>) 
 								on:updateTitle={handleUpdateTitle}
 								on:moveCard={handleMoveCard}
 								on:deleteCard={handleDeleteCard}
+								on:openDetails={handleOpenDetails} 
 							/>
 						{/each}
 					</ol>
@@ -530,6 +556,51 @@ async function handleRemoveTag(e: CustomEvent<{ cardId: number; tag: string }>) 
 			</div>
 		</div>
 	</div>
+		{#if selectedCard && selectedList}
+		<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+			<div class="relative w-full max-w-3xl rounded-lg bg-gray-900 text-gray-100 p-6 shadow-xl">
+				<button
+					type="button"
+					class="absolute right-4 top-4 text-gray-400 hover:text-white"
+					on:click={closeDetails}
+				>
+					✕
+				</button>
+
+				<!-- Header -->
+				<h2 class="mb-1 text-xl font-bold">{selectedCard.title}</h2>
+				<p class="mb-4 text-sm text-gray-400">
+					in list <span class="font-semibold text-gray-200">{selectedList.name}</span>
+				</p>
+
+				<!-- Description (placeholder pour l’instant) -->
+				<section class="mb-4">
+					<h3 class="mb-1 text-sm font-semibold uppercase tracking-wide text-gray-400">
+						Description
+					</h3>
+					<p class="rounded-md bg-gray-800 px-3 py-2 text-sm text-gray-300">
+						(Description à venir)
+					</p>
+				</section>
+
+				<!-- Tags en lecture seule pour l’instant -->
+				{#if selectedCard.tags?.length}
+					<section>
+						<h3 class="mb-1 text-sm font-semibold uppercase tracking-wide text-gray-400">
+							Tags
+						</h3>
+						<div class="flex flex-wrap gap-2">
+							{#each selectedCard.tags as tag}
+								<span class="rounded bg-sky-600 px-2 py-0.5 text-xs">
+									{tag}
+								</span>
+							{/each}
+						</div>
+					</section>
+				{/if}
+			</div>
+		</div>
+	{/if}
 {:else}
 	<div class="flex min-h-[calc(100vh-4rem)] w-screen items-center justify-center bg-gray-600">
 		<p class="rounded bg-gray-800 px-4 py-2 text-sm text-gray-200">

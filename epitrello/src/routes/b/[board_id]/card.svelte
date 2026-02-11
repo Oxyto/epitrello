@@ -34,6 +34,10 @@
 		dispatch('addTag', { listIndex, cardIndex, tag: t });
 		newTag = '';
 	}
+	function handleOpenDetails() {
+    dispatch('openDetails', { listIndex, cardIndex });
+  }
+
 </script>
 
 <li class="flex flex-col gap-2 rounded-md bg-sky-600 p-3 text-gray-100 shadow shadow-gray-400">
@@ -49,7 +53,13 @@
 			bind:value={title}
 			on:blur={handleTitleBlur}
 		/>
-
+		 <button
+			type="button"
+			class="px-2 py-1 text-xs rounded-md bg-sky-500 hover:bg-sky-400 shadow transition-all hover:cursor-pointer"
+			on:click={handleOpenDetails}
+		>
+			Details
+		</button>
 		<button
 			type="button"
 			class="w-8 pb-1 font-mono text-lg font-bold text-gray-100 transition-all hover:text-red-500 hover:cursor-pointer"
