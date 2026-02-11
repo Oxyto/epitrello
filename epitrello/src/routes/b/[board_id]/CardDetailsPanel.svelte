@@ -23,18 +23,17 @@
 </script>
 
 {#if card}
-  <!-- backdrop -->
+
   <div
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
     on:click={close}
   >
-    <!-- panneau -->
     <div
       class="flex max-h-[90vh] w-full max-w-3xl overflow-hidden rounded-xl bg-gray-900 text-gray-100 shadow-xl"
       on:click|stopPropagation
     >
       <div class="flex-1 p-6 space-y-4 overflow-y-auto">
-        <!-- Header -->
+
         <div class="flex items-start justify-between gap-4">
           <div>
             <div class="text-xs text-gray-400 mb-1">
@@ -52,7 +51,6 @@
           </button>
         </div>
 
-        <!-- Tags (lecture seule pour l'instant) -->
         <section class="space-y-2">
           <h3 class="text-sm font-semibold text-gray-300">Labels</h3>
 
@@ -69,7 +67,6 @@
           {/if}
         </section>
 
-        <!-- Placeholder description / attachments (on verra plus tard) -->
         <section class="space-y-2">
           <h3 class="text-sm font-semibold text-gray-300">Description</h3>
           <p class="text-xs text-gray-500">
