@@ -2,6 +2,67 @@ import type { RequestHandler } from './$types';
 import { json, error } from '@sveltejs/kit';
 import { CardConnector, rdb, type UUID } from '$lib/server/redisConnector';
 
+const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(value, max));
+
+async function getOrderedCardIds(listId: string): Promise<string[]> {
+	const cardIds = await rdb.smembers(`list:${listId}:cards`);
+
+	const cardsWithOrder = await Promise.all(
+		cardIds.map(async (id) => {
+			const rawOrder = await rdb.hget(`card:${id}`, 'order');
+			const order = Number.parseInt(String(rawOrder ?? ''), 10);
+
+			return {
+				id: String(id),
+				order: Number.isFinite(order) ? order : Number.MAX_SAFE_INTEGER
+			};
+		})
+	);
+
+	return cardsWithOrder.sort((a, b) => a.order - b.order).map((entry) => entry.id);
+}
+
+async function reorderCard(
+	cardId: string,
+	fromListId: string,
+	toListId: string,
+	targetIndex: number
+) {
+	const sourceOrdered = await getOrderedCardIds(fromListId);
+	const sourceWithoutCard = sourceOrdered.filter((id) => id !== cardId);
+	const destinationOrdered =
+		fromListId === toListId
+			? sourceWithoutCard
+			: (await getOrderedCardIds(toListId)).filter((id) => id !== cardId);
+	const safeIndex = clamp(targetIndex, 0, destinationOrdered.length);
+	const destinationWithCard = [
+		...destinationOrdered.slice(0, safeIndex),
+		cardId,
+		...destinationOrdered.slice(safeIndex)
+	];
+
+	if (fromListId !== toListId) {
+		await rdb.srem(`list:${fromListId}:cards`, cardId);
+		await rdb.sadd(`list:${toListId}:cards`, cardId);
+	}
+
+	if (fromListId === toListId) {
+		await Promise.all(
+			destinationWithCard.map((id, index) =>
+				rdb.hset(`card:${id}`, { list: toListId, order: index })
+			)
+		);
+		return;
+	}
+
+	await Promise.all(
+		sourceWithoutCard.map((id, index) => rdb.hset(`card:${id}`, { list: fromListId, order: index }))
+	);
+	await Promise.all(
+		destinationWithCard.map((id, index) => rdb.hset(`card:${id}`, { list: toListId, order: index }))
+	);
+}
+
 export const POST: RequestHandler = async ({ request }) => {
 	const { listId, title } = await request.json();
 
@@ -10,9 +71,14 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 
 	try {
+		const currentCardIds = await rdb.smembers(`list:${listId}:cards`);
 		const cardId = await CardConnector.create(listId as string, title);
 
 		await rdb.sadd(`list:${listId}:cards`, cardId);
+		await rdb.hset(`card:${cardId}`, {
+			list: String(listId),
+			order: currentCardIds.length
+		});
 
 		return json({ id: cardId, title });
 	} catch (err) {
@@ -22,16 +88,30 @@ export const POST: RequestHandler = async ({ request }) => {
 };
 export const PATCH: RequestHandler = async ({ request }) => {
 	const body = await request.json();
-	const { cardId, name, fromListId, toListId } = body;
+	const { cardId, name, fromListId, toListId, targetIndex, completed } = body as {
+		cardId?: string;
+		name?: string;
+		fromListId?: string;
+		toListId?: string;
+		targetIndex?: number;
+		completed?: boolean;
+	};
 
 	if (!cardId) {
 		throw error(400, 'cardId required');
 	}
+
 	if (typeof name === 'string') {
 		await rdb.hset(`card:${cardId}`, { name });
 	}
 
-	if (fromListId && toListId && fromListId !== toListId) {
+	if (typeof completed === 'boolean') {
+		await rdb.hset(`card:${cardId}`, { completed: completed ? 1 : 0 });
+	}
+
+	if (fromListId && toListId && Number.isInteger(targetIndex)) {
+		await reorderCard(cardId, fromListId, toListId, Number(targetIndex));
+	} else if (fromListId && toListId && fromListId !== toListId) {
 		await rdb.srem(`list:${fromListId}:cards`, cardId);
 		await rdb.sadd(`list:${toListId}:cards`, cardId);
 		await rdb.hset(`card:${cardId}`, { list: toListId });
@@ -48,8 +128,7 @@ export const DELETE: RequestHandler = async ({ url, request }) => {
 			if (body && typeof body.cardId === 'string') {
 				id = body.cardId;
 			}
-		} catch {
-		}
+		} catch {}
 	}
 
 	if (!id) {

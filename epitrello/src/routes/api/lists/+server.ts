@@ -20,13 +20,25 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 };
 export const PATCH: RequestHandler = async ({ request }) => {
-	const { listId, name } = await request.json();
+	const { listId, name, order } = await request.json();
 
-	if (!listId || !name) {
-		throw error(400, 'listId and name required');
+	if (!listId) {
+		throw error(400, 'listId required');
 	}
 
-	await rdb.hset(`list:${listId}`, { name });
+	const updates: Record<string, string | number> = {};
+	if (typeof name === 'string') {
+		updates.name = name;
+	}
+	if (typeof order === 'number' && Number.isFinite(order)) {
+		updates.order = Math.trunc(order);
+	}
+
+	if (Object.keys(updates).length === 0) {
+		throw error(400, 'name or order required');
+	}
+
+	await rdb.hset(`list:${listId}`, updates);
 
 	return json({ ok: true });
 };

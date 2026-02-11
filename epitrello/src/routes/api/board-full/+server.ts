@@ -32,6 +32,7 @@ export const GET: RequestHandler = async ({ url }) => {
 						uuid: card.uuid,
 						title: card.name,
 						order: card.order,
+						completed: card.completed ?? false,
 						tags: tagNames
 					};
 				})

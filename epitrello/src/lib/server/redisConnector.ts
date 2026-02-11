@@ -53,7 +53,7 @@ export class UserConnector {
 		);
 	}
 
-		static async getByEmail(email: string): Promise<IUser | null> {
+	static async getByEmail(email: string): Promise<IUser | null> {
 		const uuid = await rdb.get(`user_email:${email.toLowerCase()}`);
 		if (!uuid) return null;
 
@@ -153,7 +153,6 @@ export class BoardConnector {
 	static async del(boardId: UUID) {
 		const lists_query = await rdb.smembers(`board:${boardId}:lists`);
 
-
 		if (lists_query) {
 			await Promise.all(lists_query.map((listId) => ListConnector.del(listId as UUID)));
 		}
@@ -168,14 +167,23 @@ export class BoardConnector {
 }
 
 export class ListConnector {
-		static async create(boardId: UUID, name: string) {
+	static async create(boardId: UUID, name: string) {
 		const uuid = Bun.randomUUIDv7();
+		const existingListIds = await rdb.smembers(`board:${boardId}:lists`);
+		const existingOrders = await Promise.all(
+			existingListIds.map(async (listId) => {
+				const rawOrder = await rdb.hget(`list:${listId}`, 'order');
+				const parsed = Number.parseInt(String(rawOrder ?? ''), 10);
+				return Number.isFinite(parsed) ? parsed : -1;
+			})
+		);
+		const nextOrder = existingOrders.length > 0 ? Math.max(...existingOrders) + 1 : 0;
 
 		await rdb.hset(`list:${uuid}`, {
 			uuid,
 			name,
 			board: boardId,
-			order: 100
+			order: nextOrder
 		});
 		await rdb.sadd(`board:${boardId}:lists`, uuid);
 
@@ -208,17 +216,14 @@ export class ListConnector {
 		return list;
 	}
 
-static async del(listId: UUID) {
-	const cards_query = await rdb.smembers(`list:${listId}:cards`);
+	static async del(listId: UUID) {
+		const cards_query = await rdb.smembers(`list:${listId}:cards`);
 
-	if (cards_query && cards_query.length > 0) {
-		await Promise.all(cards_query.map((cardId) => CardConnector.del(cardId as UUID)));
+		if (cards_query && cards_query.length > 0) {
+			await Promise.all(cards_query.map((cardId) => CardConnector.del(cardId as UUID)));
+		}
+		await Promise.all([rdb.del(`list:${listId}`), rdb.del(`list:${listId}:cards`)]);
 	}
-	await Promise.all([
-		rdb.del(`list:${listId}`),
-		rdb.del(`list:${listId}:cards`)
-	]);
-}
 }
 
 export class CardConnector {
@@ -231,7 +236,8 @@ export class CardConnector {
 			list: listId,
 			order: 0,
 			description: '',
-			date: ''
+			date: '',
+			completed: 0
 		});
 
 		return uuid;
@@ -240,18 +246,22 @@ export class CardConnector {
 	static async save(card: ICard) {
 		await rdb.hset(`card:${card.uuid}`, {
 			uuid: card.uuid,
+			list: card.list,
 			name: card.name,
 			description: card.description,
 			order: card.order,
 			date: card.date.toLocaleString(),
-			checklist: JSON.stringify(card.checklist)
-		})
+			checklist: JSON.stringify(card.checklist),
+			completed: card.completed ? 1 : 0
+		});
 
 		if (card.tags) {
-			await Promise.all(card.tags.map((tagId) => rdb.sadd(`card:${card.uuid}:tags`, tagId)))
+			await Promise.all(card.tags.map((tagId) => rdb.sadd(`card:${card.uuid}:tags`, tagId)));
 		}
 		if (card.assignees) {
-			await Promise.all(card.assignees.map((assigneeId) => rdb.sadd(`card:${card.uuid}:assignees`, assigneeId)))
+			await Promise.all(
+				card.assignees.map((assigneeId) => rdb.sadd(`card:${card.uuid}:assignees`, assigneeId))
+			);
 		}
 	}
 
@@ -270,28 +280,35 @@ export class CardConnector {
 
 	static async getByListId(listId: UUID) {
 		const cards_query = await rdb.smembers(`list:${listId}:cards`);
+		const cards = await Promise.all(cards_query.map((cardId) => CardConnector.get(cardId as UUID)));
 
-		return Promise.all(cards_query.map((cardId) => CardConnector.get(cardId as UUID)));
+		return cards.sort((a, b) => {
+			if (!a && !b) return 0;
+			if (!a) return 1;
+			if (!b) return -1;
+			if (a.order !== b.order) return a.order - b.order;
+			return a.uuid.localeCompare(b.uuid);
+		});
 	}
 
-static async del(cardId: UUID) {
-    const cardData = await rdb.hgetall(`card:${cardId}`);
-    const listId = cardData?.list;
-    const tags_query = await rdb.smembers(`card:${cardId}:tags`);
+	static async del(cardId: UUID) {
+		const cardData = await rdb.hgetall(`card:${cardId}`);
+		const listId = cardData?.list;
+		const tags_query = await rdb.smembers(`card:${cardId}:tags`);
 
-    if (tags_query && tags_query.length > 0) {
-      await Promise.all(tags_query.map((tagId) => TagConnector.del(tagId as UUID)));
-    }
-    await Promise.all([
-      rdb.del(`card:${cardId}`),
-      rdb.del(`card:${cardId}:assignees`),
-      rdb.del(`card:${cardId}:tags`)
-    ]);
+		if (tags_query && tags_query.length > 0) {
+			await Promise.all(tags_query.map((tagId) => TagConnector.del(tagId as UUID)));
+		}
+		await Promise.all([
+			rdb.del(`card:${cardId}`),
+			rdb.del(`card:${cardId}:assignees`),
+			rdb.del(`card:${cardId}:tags`)
+		]);
 
-    if (listId) {
-      await rdb.srem(`list:${listId}:cards`, cardId);
-    }
-  }
+		if (listId) {
+			await rdb.srem(`list:${listId}:cards`, cardId);
+		}
+	}
 }
 
 export class TagConnector {
@@ -338,80 +355,86 @@ export class TagConnector {
 		return tags.filter((t): t is ITag => t !== null);
 	}
 
-static async del(tagId: UUID) {
-    const tagData = await rdb.hgetall(`tag:${tagId}`);
+	static async del(tagId: UUID) {
+		const tagData = await rdb.hgetall(`tag:${tagId}`);
 
-    const cardId = tagData?.card;
-    if (cardId) {
-      await rdb.srem(`card:${cardId}:tags`, tagId);
-    }
+		const cardId = tagData?.card;
+		if (cardId) {
+			await rdb.srem(`card:${cardId}:tags`, tagId);
+		}
 
-    await Promise.all([
-      rdb.del(`tag:${tagId}`),
-      rdb.del(`tag:${tagId}:attributes`)
-    ]);
-  }
+		await Promise.all([rdb.del(`tag:${tagId}`), rdb.del(`tag:${tagId}:attributes`)]);
+	}
 }
 
 export async function getFullBoard(boardId: UUID) {
-  try {
-    const board = await BoardConnector.get(boardId);
-    if (!board) return null;
+	try {
+		const board = await BoardConnector.get(boardId);
+		if (!board) return null;
 
-    const listIds = board.lists ?? [];
+		const listIds = board.lists ?? [];
 
-    const lists = (
-      await Promise.all(
-        listIds.map(async (listId) => {
-          const list = await ListConnector.get(listId as UUID);
-          if (!list) return null;
+		const lists = (
+			await Promise.all(
+				listIds.map(async (listId) => {
+					const list = await ListConnector.get(listId as UUID);
+					if (!list) return null;
 
-          const cardsRaw = await CardConnector.getByListId(list.uuid as UUID);
-          const cards = await Promise.all(
-            (cardsRaw ?? [])
-              .filter((c): c is ICard => c !== null)
-              .map(async (card) => {
-                let tagNames: string[] = [];
+					const cardsRaw = await CardConnector.getByListId(list.uuid as UUID);
+					const cards = await Promise.all(
+						(cardsRaw ?? [])
+							.filter((c): c is ICard => c !== null)
+							.sort((a, b) => {
+								if (a.order !== b.order) return a.order - b.order;
+								return a.uuid.localeCompare(b.uuid);
+							})
+							.map(async (card) => {
+								let tagNames: string[] = [];
 
-                try {
-                  const tagsRaw = await TagConnector.getAllByCardId(card.uuid as UUID);
-                  tagNames =
-                    (tagsRaw ?? [])
-                      .filter((t): t is ITag => t !== null)
-                      .map((t) => t.name);
-                } catch (err) {
-                  console.error(
-                    'getFullBoard: erreur chargement tags pour la carte',
-                    card.uuid,
-                    err
-                  );
-                }
+								try {
+									const tagsRaw = await TagConnector.getAllByCardId(card.uuid as UUID);
+									tagNames = (tagsRaw ?? [])
+										.filter((t): t is ITag => t !== null)
+										.map((t) => t.name);
+								} catch (err) {
+									console.error(
+										'getFullBoard: erreur chargement tags pour la carte',
+										card.uuid,
+										err
+									);
+								}
 
-                return {
-                  uuid: card.uuid,
-                  name: card.name,
-                  description: card.description,
-                  order: card.order,
-                  date: card.date,
-                  tags: tagNames
-                };
-              })
-          );
+								return {
+									uuid: card.uuid,
+									name: card.name,
+									description: card.description,
+									order: card.order,
+									date: card.date,
+									completed: card.completed ?? false,
+									tags: tagNames
+								};
+							})
+					);
 
-          return {
-            uuid: list.uuid,
-            name: list.name,
-            board: list.board,
-            order: list.order,
-            cards
-          };
-        })
-      )
-    ).filter((l) => l !== null);
+					return {
+						uuid: list.uuid,
+						name: list.name,
+						board: list.board,
+						order: list.order,
+						cards
+					};
+				})
+			)
+		)
+			.filter((l) => l !== null)
+			.sort((a, b) => {
+				if (a.order !== b.order) return a.order - b.order;
+				return a.uuid.localeCompare(b.uuid);
+			});
 
-    return { board, lists };
-  } catch (err) {
-    console.error('getFullBoard: fatal error', err);
-    throw err;
-  }
+		return { board, lists };
+	} catch (err) {
+		console.error('getFullBoard: fatal error', err);
+		throw err;
+	}
 }
