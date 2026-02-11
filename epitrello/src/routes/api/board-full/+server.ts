@@ -17,8 +17,13 @@ export const GET: RequestHandler = async ({ url }) => {
 	const lists = await Promise.all(
 		full.lists.map(async (list) => {
 			const cards = await Promise.all(
-				(list.cards ?? []).map(async (card, idx) => {
-					const tagIds = await rdb.smembers(`card:${card.uuid}:tags`);
+				(list.cards ?? []).map(async (card) => {
+					const [tagIds, assignees, dueDateRaw, descriptionRaw] = await Promise.all([
+						rdb.smembers(`card:${card.uuid}:tags`),
+						rdb.smembers(`card:${card.uuid}:assignees`),
+						rdb.hget(`card:${card.uuid}`, 'dueDate'),
+						rdb.hget(`card:${card.uuid}`, 'description')
+					]);
 					const tagNames: string[] = [];
 
 					for (const tagId of tagIds) {
@@ -31,6 +36,9 @@ export const GET: RequestHandler = async ({ url }) => {
 					return {
 						uuid: card.uuid,
 						title: card.name,
+						description: String(descriptionRaw ?? card.description ?? ''),
+						dueDate: String(dueDateRaw ?? ''),
+						assignees: assignees.map((assignee) => String(assignee)),
 						order: card.order,
 						completed: card.completed ?? false,
 						tags: tagNames

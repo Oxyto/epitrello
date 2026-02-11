@@ -88,9 +88,22 @@ export const POST: RequestHandler = async ({ request }) => {
 };
 export const PATCH: RequestHandler = async ({ request }) => {
 	const body = await request.json();
-	const { cardId, name, fromListId, toListId, targetIndex, completed } = body as {
+	const {
+		cardId,
+		name,
+		description,
+		dueDate,
+		assignees,
+		fromListId,
+		toListId,
+		targetIndex,
+		completed
+	} = body as {
 		cardId?: string;
 		name?: string;
+		description?: string;
+		dueDate?: string;
+		assignees?: string[];
 		fromListId?: string;
 		toListId?: string;
 		targetIndex?: number;
@@ -103,6 +116,25 @@ export const PATCH: RequestHandler = async ({ request }) => {
 
 	if (typeof name === 'string') {
 		await rdb.hset(`card:${cardId}`, { name });
+	}
+
+	if (typeof description === 'string') {
+		await rdb.hset(`card:${cardId}`, { description });
+	}
+
+	if (typeof dueDate === 'string') {
+		await rdb.hset(`card:${cardId}`, { dueDate: dueDate.trim() });
+	}
+
+	if (Array.isArray(assignees)) {
+		const normalizedAssignees = assignees
+			.map((assignee) => String(assignee).trim())
+			.filter((assignee) => assignee.length > 0);
+
+		await rdb.del(`card:${cardId}:assignees`);
+		await Promise.all(
+			normalizedAssignees.map((assignee) => rdb.sadd(`card:${cardId}:assignees`, assignee))
+		);
 	}
 
 	if (typeof completed === 'boolean') {

@@ -657,6 +657,46 @@ describe('api/cards +server', () => {
 		expect(state.rdbHsetCalls).toEqual([{ key: 'card:card-1', values: { completed: 1 } }]);
 	});
 
+	it('PATCH updates card description and due date when provided', async () => {
+		const response = await cardsRoute.PATCH({
+			request: new Request('http://localhost/api/cards', {
+				method: 'PATCH',
+				body: JSON.stringify({
+					cardId: 'card-1',
+					description: 'Ship v1 with editor',
+					dueDate: '2026-02-20'
+				})
+			})
+		} as any);
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ ok: true });
+		expect(state.rdbHsetCalls).toEqual([
+			{ key: 'card:card-1', values: { description: 'Ship v1 with editor' } },
+			{ key: 'card:card-1', values: { dueDate: '2026-02-20' } }
+		]);
+	});
+
+	it('PATCH replaces assignees set when assignees are provided', async () => {
+		const response = await cardsRoute.PATCH({
+			request: new Request('http://localhost/api/cards', {
+				method: 'PATCH',
+				body: JSON.stringify({
+					cardId: 'card-1',
+					assignees: [' Alice ', '', 'Bob']
+				})
+			})
+		} as any);
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ ok: true });
+		expect(state.rdbDelCalls).toEqual(['card:card-1:assignees']);
+		expect(state.rdbSaddCalls).toEqual([
+			{ key: 'card:card-1:assignees', value: 'Alice' },
+			{ key: 'card:card-1:assignees', value: 'Bob' }
+		]);
+	});
+
 	it('PATCH reorders a card inside the same list when targetIndex is provided', async () => {
 		state.rdbSmembersValues['list:list-a:cards'] = ['card-1', 'card-2', 'card-3'];
 		state.rdbHgetValues['card:card-1:order'] = '0';
@@ -965,6 +1005,9 @@ describe('api/board-full +server', () => {
 						{
 							uuid: 'card-1',
 							title: 'Implement integration tests',
+							description: '',
+							dueDate: '',
+							assignees: [],
 							order: 2,
 							completed: true,
 							tags: ['backend', 'urgent']
@@ -980,7 +1023,11 @@ describe('api/board-full +server', () => {
 			]
 		});
 		expect(state.getFullBoardCalls).toEqual(['board-1']);
-		expect(state.rdbSmembersCalls).toEqual(['card:card-1:tags']);
+		expect(state.rdbSmembersCalls).toEqual(['card:card-1:tags', 'card:card-1:assignees']);
+		expect(state.rdbHgetCalls).toEqual([
+			{ key: 'card:card-1', field: 'dueDate' },
+			{ key: 'card:card-1', field: 'description' }
+		]);
 		expect(state.rdbHgetallCalls).toEqual(['tag:tag-1', 'tag:tag-2', 'tag:tag-3']);
 	});
 });

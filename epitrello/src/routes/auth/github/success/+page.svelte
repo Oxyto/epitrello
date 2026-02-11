@@ -27,4 +27,4 @@
 	});
 </script>
 
-<p class="p-4 text-gray-600">Connexion GitHub en cours...</p>
+<p class="p-4 text-slate-200">Connexion GitHub en cours...</p>

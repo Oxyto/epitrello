@@ -8,6 +8,9 @@
 		id: number;
 		uuid?: string;
 		title: string;
+		description: string;
+		dueDate: string;
+		assignees: string[];
 		completed: boolean;
 		tags: string[];
 	};
@@ -27,6 +30,9 @@
 			cards: Array<{
 				uuid: string;
 				title: string;
+				description: string;
+				dueDate: string;
+				assignees: string[];
 				order: number;
 				completed: boolean;
 				tags: string[];
@@ -51,6 +57,11 @@
 	let draggedCardRef = $state<{ listIndex: number; cardIndex: number } | null>(null);
 	let cardDropPreview = $state<{ listIndex: number; targetIndex: number } | null>(null);
 	let draggedListIndex = $state<number | null>(null);
+	let listDropPreviewIndex = $state<number | null>(null);
+	let editorDescription = $state('');
+	let editorDueDate = $state('');
+	let editorNewTag = $state('');
+	let editorNewAssignee = $state('');
 
 	const selectedList = $derived<UiList | null>(
 		selectedCardRef && lists[selectedCardRef.listIndex] ? lists[selectedCardRef.listIndex] : null
@@ -76,6 +87,9 @@
 				id: localId++,
 				uuid: card.uuid,
 				title: card.title,
+				description: card.description ?? '',
+				dueDate: card.dueDate ?? '',
+				assignees: card.assignees ?? [],
 				completed: card.completed ?? false,
 				tags: card.tags ?? []
 			}))
@@ -132,6 +146,9 @@
 					id: localId++,
 					uuid: c.uuid,
 					title: c.title,
+					description: '',
+					dueDate: '',
+					assignees: [],
 					completed: c.completed ?? false,
 					tags: c.tags ?? []
 				}))
@@ -256,6 +273,9 @@
 		const newCard: UiCard = {
 			id: localId,
 			title,
+			description: '',
+			dueDate: '',
+			assignees: [],
 			completed: false,
 			tags: [],
 			uuid: undefined
@@ -301,6 +321,17 @@
 		const card = list.cards[cardIndex];
 		const cardUuid = card.uuid;
 
+		if (selectedCardRef && selectedCardRef.listIndex === listIndex) {
+			if (selectedCardRef.cardIndex === cardIndex) {
+				closeDetails();
+			} else if (selectedCardRef.cardIndex > cardIndex) {
+				selectedCardRef = {
+					listIndex,
+					cardIndex: selectedCardRef.cardIndex - 1
+				};
+			}
+		}
+
 		const newLists = lists.map((l, li) => {
 			if (li !== listIndex) return l;
 
@@ -330,34 +361,47 @@
 	function handleOpenDetails(event: CustomEvent<{ listIndex: number; cardIndex: number }>) {
 		const { listIndex, cardIndex } = event.detail;
 		selectedCardRef = { listIndex, cardIndex };
+
+		const card = lists[listIndex]?.cards[cardIndex];
+		if (!card) return;
+
+		editorDescription = card.description ?? '';
+		editorDueDate = card.dueDate ?? '';
+		editorNewTag = '';
+		editorNewAssignee = '';
 	}
 
 	function closeDetails() {
 		selectedCardRef = null;
+		editorDescription = '';
+		editorDueDate = '';
+		editorNewTag = '';
+		editorNewAssignee = '';
 	}
 
-	async function handleUpdateTitle(
-		event: CustomEvent<{ listIndex: number; cardIndex: number; title: string }>
-	) {
-		const { listIndex, cardIndex, title } = event.detail;
-
+	function getSelectedCardContext() {
+		if (!selectedCardRef) return null;
+		const { listIndex, cardIndex } = selectedCardRef;
 		const list = lists[listIndex];
-		if (!list || !list.cards[cardIndex]) return;
+		const card = list?.cards[cardIndex];
 
-		const card = list.cards[cardIndex];
-		card.title = title;
+		if (!list || !card) return null;
+		return { listIndex, cardIndex, list, card };
+	}
 
-		const cardUuid = card.uuid;
+	async function persistCardFields(cardUuid: string | undefined, fields: Record<string, unknown>) {
 		if (!browser || !cardUuid) return;
-
 		try {
 			await fetch('/api/cards', {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ cardId: cardUuid, name: title.trim() })
+				body: JSON.stringify({
+					cardId: cardUuid,
+					...fields
+				})
 			});
 		} catch (err) {
-			console.error('Erreur rename card', err);
+			console.error('Erreur update card fields', err);
 		}
 	}
 
@@ -370,20 +414,7 @@
 
 		const card = list.cards[cardIndex];
 		card.completed = completed;
-
-		if (!browser || !card.uuid) return;
-		try {
-			await fetch('/api/cards', {
-				method: 'PATCH',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					cardId: card.uuid,
-					completed
-				})
-			});
-		} catch (err) {
-			console.error('Erreur update completed card', err);
-		}
+		await persistCardFields(card.uuid, { completed });
 	}
 
 	function moveCardInMemory(
@@ -507,6 +538,7 @@
 	function handleDragStart(event: CustomEvent<{ listIndex: number; cardIndex: number }>) {
 		draggedCardRef = event.detail;
 		cardDropPreview = null;
+		listDropPreviewIndex = null;
 	}
 
 	function handleDragEnd() {
@@ -527,6 +559,7 @@
 
 		draggedListIndex = index;
 		cardDropPreview = null;
+		listDropPreviewIndex = null;
 		if (event.dataTransfer) {
 			event.dataTransfer.effectAllowed = 'move';
 			event.dataTransfer.setData('text/plain', `list:${index}`);
@@ -535,11 +568,26 @@
 
 	function handleListDragEnd() {
 		draggedListIndex = null;
+		listDropPreviewIndex = null;
 	}
 
-	function handleListDragOver(event: DragEvent) {
+	function setListDropPreview(targetInsertIndex: number) {
+		if (draggedListIndex === null) return;
+		const previewIndex = Math.max(0, Math.min(targetInsertIndex, lists.length));
+		const isNoOpPosition =
+			previewIndex === draggedListIndex || previewIndex === draggedListIndex + 1;
+		listDropPreviewIndex = isNoOpPosition ? null : previewIndex;
+	}
+
+	function handleListDragOver(targetIndex: number, event: DragEvent) {
 		if (draggedListIndex === null) return;
 		event.preventDefault();
+
+		const targetElement = event.currentTarget as HTMLElement | null;
+		const rect = targetElement?.getBoundingClientRect();
+		const dropAfter = rect ? event.clientX > rect.left + rect.width / 2 : false;
+		const targetInsertIndex = dropAfter ? targetIndex + 1 : targetIndex;
+		setListDropPreview(targetInsertIndex);
 	}
 
 	async function handleListDrop(targetIndex: number, event: DragEvent) {
@@ -553,6 +601,7 @@
 
 		const moved = moveListInMemory(draggedListIndex, targetInsertIndex);
 		draggedListIndex = null;
+		listDropPreviewIndex = null;
 		if (!moved || !moved.changed) return;
 
 		selectedCardRef = null;
@@ -605,91 +654,142 @@
 		await persistCardMove(moved.card.uuid, moved.fromListUuid, moved.toListUuid, moved.insertIndex);
 	}
 
-	async function handleMoveCard(
-		event: CustomEvent<{ listIndex: number; cardIndex: number; direction: number }>
-	) {
-		const { listIndex, cardIndex, direction } = event.detail;
+	function handleEditorTitleInput(event: Event) {
+		const context = getSelectedCardContext();
+		if (!context) return;
 
-		const newListIndex = listIndex + direction;
-		if (!lists[newListIndex]) {
-			console.warn('handleMoveCard: nouvelle liste inexistante', newListIndex, lists);
+		const target = event.currentTarget as HTMLInputElement;
+		context.card.title = target.value;
+	}
+
+	async function handleEditorTitleBlur() {
+		const context = getSelectedCardContext();
+		if (!context) return;
+
+		const normalizedTitle = context.card.title.trim();
+		if (!normalizedTitle) return;
+
+		context.card.title = normalizedTitle;
+		await persistCardFields(context.card.uuid, { name: normalizedTitle });
+	}
+
+	function handleEditorDescriptionInput(event: Event) {
+		const context = getSelectedCardContext();
+		if (!context) return;
+
+		const target = event.currentTarget as HTMLTextAreaElement;
+		editorDescription = target.value;
+		context.card.description = target.value;
+	}
+
+	async function handleEditorDescriptionBlur() {
+		const context = getSelectedCardContext();
+		if (!context) return;
+
+		await persistCardFields(context.card.uuid, { description: editorDescription });
+	}
+
+	function handleEditorDueDateInput(event: Event) {
+		const target = event.currentTarget as HTMLInputElement;
+		editorDueDate = target.value;
+	}
+
+	async function saveEditorDueDate() {
+		const context = getSelectedCardContext();
+		if (!context) return;
+
+		context.card.dueDate = editorDueDate;
+		await persistCardFields(context.card.uuid, { dueDate: editorDueDate });
+	}
+
+	async function clearEditorDueDate() {
+		const context = getSelectedCardContext();
+		if (!context) return;
+
+		editorDueDate = '';
+		context.card.dueDate = '';
+		await persistCardFields(context.card.uuid, { dueDate: '' });
+	}
+
+	async function addEditorAssignee() {
+		const assignee = editorNewAssignee.trim();
+		if (!assignee) return;
+
+		const context = getSelectedCardContext();
+		if (!context) return;
+
+		if (
+			context.card.assignees.some(
+				(existingAssignee) => existingAssignee.toLowerCase() === assignee.toLowerCase()
+			)
+		) {
+			editorNewAssignee = '';
 			return;
 		}
 
-		const moved = moveCardInMemory(
-			listIndex,
-			cardIndex,
-			newListIndex,
-			lists[newListIndex].cards.length
-		);
-		if (!moved || moved.unchanged) return;
-
-		await persistCardMove(moved.card.uuid, moved.fromListUuid, moved.toListUuid, moved.insertIndex);
+		context.card.assignees = [...context.card.assignees, assignee];
+		editorNewAssignee = '';
+		await persistCardFields(context.card.uuid, { assignees: context.card.assignees });
 	}
 
-	async function handleAddTag(
-		event: CustomEvent<{ listIndex: number; cardIndex: number; tag: string }>
-	) {
-		const { listIndex, cardIndex, tag } = event.detail;
+	async function removeEditorAssignee(assignee: string) {
+		const context = getSelectedCardContext();
+		if (!context) return;
 
-		const list = lists[listIndex];
-		if (!list || !list.cards[cardIndex]) return;
+		context.card.assignees = context.card.assignees.filter((entry) => entry !== assignee);
+		await persistCardFields(context.card.uuid, { assignees: context.card.assignees });
+	}
 
-		const card = list.cards[cardIndex];
-		if (card.tags.includes(tag)) return;
+	async function addEditorTag() {
+		const tag = editorNewTag.trim();
+		if (!tag) return;
 
-		card.tags.push(tag);
-		if (!card.uuid) return;
+		const context = getSelectedCardContext();
+		if (!context || !context.card.uuid) return;
+
+		if (context.card.tags.some((existingTag) => existingTag.toLowerCase() === tag.toLowerCase())) {
+			editorNewTag = '';
+			return;
+		}
+
+		context.card.tags = [...context.card.tags, tag];
+		editorNewTag = '';
+
 		try {
 			const res = await fetch('/api/tags', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ cardId: card.uuid, name: tag })
+				body: JSON.stringify({ cardId: context.card.uuid, name: tag })
 			});
+
 			if (!res.ok) {
+				context.card.tags = context.card.tags.filter((existingTag) => existingTag !== tag);
 				console.error('Erreur API add tag', await res.text());
 			}
 		} catch (err) {
+			context.card.tags = context.card.tags.filter((existingTag) => existingTag !== tag);
 			console.error('Erreur réseau add tag', err);
 		}
 	}
 
-	async function handleRemoveTag(e: CustomEvent<{ cardId: number; tag: string }>) {
-		const { cardId, tag } = e.detail;
+	async function removeEditorTag(tag: string) {
+		const context = getSelectedCardContext();
+		if (!context || !context.card.uuid) return;
 
-		let cardUuid: string | undefined;
-		const updatedLists = lists.map((list) => {
-			const cards = list.cards.map((card) => {
-				if (card.id === cardId) {
-					cardUuid = card.uuid;
-					return {
-						...card,
-						tags: (card.tags ?? []).filter((t) => t !== tag)
-					};
-				}
-				return card;
+		context.card.tags = context.card.tags.filter((entry) => entry !== tag);
+
+		try {
+			const res = await fetch('/api/tags', {
+				method: 'DELETE',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ cardId: context.card.uuid, name: tag })
 			});
 
-			return { ...list, cards };
-		});
-
-		lists = updatedLists;
-		if (cardUuid) {
-			try {
-				const res = await fetch('/api/tags', {
-					method: 'DELETE',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ cardId: cardUuid, name: tag })
-				});
-
-				if (!res.ok) {
-					console.error('Erreur API delete tag', await res.text());
-				}
-			} catch (err) {
-				console.error('Erreur réseau API delete tag', err);
+			if (!res.ok) {
+				console.error('Erreur API delete tag', await res.text());
 			}
-		} else {
-			console.warn('handleRemoveTag: pas de uuid sur la carte, API non appelée');
+		} catch (err) {
+			console.error('Erreur réseau API delete tag', err);
 		}
 	}
 </script>
@@ -714,31 +814,35 @@
 
 		<div class="flex gap-3 overflow-x-auto px-2 py-3">
 			{#each lists as list, i}
+				{#if listDropPreviewIndex === i}
+					<div
+						class="pointer-events-none min-h-[180px] min-w-[220px] rounded-xl border-2 border-dashed border-sky-300/70 bg-sky-400/20"
+					></div>
+				{/if}
 				<div
 					class="group/list relative min-w-[220px] rounded-xl border border-sky-300/20 bg-slate-800/70 p-3 text-slate-100 shadow-md shadow-slate-950/50 backdrop-blur-sm"
 					draggable="true"
 					on:dragstart={(event) => handleListDragStart(i, event)}
 					on:dragend={handleListDragEnd}
-					on:dragover={handleListDragOver}
+					on:dragover={(event) => handleListDragOver(i, event)}
 					on:drop={(event) => handleListDrop(i, event)}
 				>
-					<div class="absolute right-1 top-1 h-10 w-10 rounded-tr-xl group/corner">
-						<button
-							type="button"
-							title="Delete list"
-							class="pointer-events-none absolute right-0 top-0 h-8 w-8 rounded-full border border-rose-300/20 bg-slate-800/90 text-center text-sm font-bold text-rose-200 opacity-0 shadow-sm shadow-black/30 transition-all group-hover/corner:pointer-events-auto group-hover/corner:opacity-100 hover:border-rose-300/60 hover:bg-rose-500/20 hover:text-rose-100"
-							on:click={() => deleteList(i)}
-						>
-							✕
-						</button>
-					</div>
-
-					<div class="flex min-w-full flex-row items-center justify-center gap-2 pr-7">
+					<div class="flex min-w-full flex-row items-center gap-2">
 						<input
-							class="w-full rounded-md border-0 bg-transparent px-1 py-1 font-mono text-lg font-bold text-slate-100 transition-colors hover:bg-slate-700/50"
+							class="w-full flex-1 rounded-md border-0 bg-transparent px-1 py-1 font-mono text-lg font-bold text-slate-100 transition-colors hover:bg-slate-700/50"
 							value={list.name}
 							on:input={(e) => updateListName(i, e)}
 						/>
+						<div class="group/list-corner relative h-8 w-8 shrink-0">
+							<button
+								type="button"
+								title="Delete list"
+								class="pointer-events-none absolute right-0 top-0 h-8 w-8 cursor-pointer rounded-full border border-rose-300/20 bg-slate-800/90 text-center text-sm font-bold text-rose-200 opacity-0 shadow-sm shadow-black/30 transition-all group-hover/list-corner:pointer-events-auto group-hover/list-corner:opacity-100 hover:border-rose-300/60 hover:bg-rose-500/20 hover:text-rose-100"
+								on:click={() => deleteList(i)}
+							>
+								✕
+							</button>
+						</div>
 					</div>
 
 					<ol
@@ -756,11 +860,7 @@
 								{card}
 								listIndex={i}
 								cardIndex={j}
-								on:addTag={handleAddTag}
-								on:removeTag={handleRemoveTag}
-								on:updateTitle={handleUpdateTitle}
 								on:updateCompleted={handleUpdateCompleted}
-								on:moveCard={handleMoveCard}
 								on:deleteCard={handleDeleteCard}
 								on:openDetails={handleOpenDetails}
 								on:dragStart={handleDragStart}
@@ -793,6 +893,11 @@
 					</form>
 				</div>
 			{/each}
+			{#if listDropPreviewIndex === lists.length}
+				<div
+					class="pointer-events-none min-h-[180px] min-w-[220px] rounded-xl border-2 border-dashed border-sky-300/70 bg-sky-400/20"
+				></div>
+			{/if}
 
 			<div
 				class="min-w-[220px] rounded-xl border border-dashed border-sky-300/35 bg-slate-800/55 p-3 text-slate-100 shadow-md shadow-slate-950/40 backdrop-blur-sm"
@@ -815,49 +920,163 @@
 		</div>
 	</div>
 	{#if selectedCard && selectedList}
-		<div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45">
+		<div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4">
 			<div
-				class="relative w-full max-w-2xl rounded-xl border border-slate-200 bg-white p-5 text-slate-800 shadow-xl shadow-slate-400/30"
+				class="relative w-full max-w-3xl rounded-xl border border-sky-300/30 bg-slate-900/95 p-5 text-slate-100 shadow-xl shadow-slate-950/70 backdrop-blur-sm"
 			>
-				<button
-					type="button"
-					class="absolute right-3 top-3 text-slate-400 transition-colors hover:text-slate-700"
-					on:click={closeDetails}
-				>
-					✕
-				</button>
-
-				<!-- Header -->
-				<h2 class="mb-1 text-lg font-bold">{selectedCard.title}</h2>
-				<p class="mb-3 text-xs text-slate-500">
-					in list <span class="font-semibold text-slate-700">{selectedList.name}</span>
+				<div class="mb-1 flex items-start gap-2">
+					<input
+						type="text"
+						class="min-w-0 flex-1 rounded-md border border-slate-600 bg-slate-800/80 px-2 py-1 text-lg font-bold text-slate-100 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none"
+						value={selectedCard.title}
+						on:input={handleEditorTitleInput}
+						on:blur={handleEditorTitleBlur}
+					/>
+					<button
+						type="button"
+						class="ml-2 mt-0.5 h-8 w-8 shrink-0 cursor-pointer rounded-full border border-slate-500/70 bg-slate-800/90 text-slate-300 shadow-md shadow-slate-950/70 transition-all hover:border-sky-300/70 hover:bg-sky-500/20 hover:text-slate-100"
+						on:click={closeDetails}
+					>
+						✕
+					</button>
+				</div>
+				<p class="mb-4 text-xs text-slate-300">
+					in list <span class="font-semibold text-sky-200">{selectedList.name}</span>
 				</p>
 
-				<!-- Description (placeholder pour l’instant) -->
-				<section class="mb-3">
-					<h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-						Description
-					</h3>
-					<p class="rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-600">
-						(Description à venir)
-					</p>
-				</section>
-
-				<!-- Tags en lecture seule pour l’instant -->
-				{#if selectedCard.tags?.length}
-					<section>
-						<h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Tags</h3>
-						<div class="flex flex-wrap gap-2">
-							{#each selectedCard.tags as tag}
-								<span
-									class="rounded-md bg-sky-500/15 px-2 py-0.5 text-xs text-sky-700 ring-1 ring-sky-200"
-								>
-									{tag}
-								</span>
-							{/each}
-						</div>
+				<div class="grid gap-4 md:grid-cols-2">
+					<section class="md:col-span-2">
+						<h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-sky-200">
+							Description
+						</h3>
+						<textarea
+							class="min-h-28 w-full rounded-md border border-slate-600 bg-slate-800/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none"
+							placeholder="Write a description..."
+							value={editorDescription}
+							on:input={handleEditorDescriptionInput}
+							on:blur={handleEditorDescriptionBlur}
+						></textarea>
 					</section>
-				{/if}
+
+					<section class="min-w-0">
+						<h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-sky-200">
+							Assignées
+						</h3>
+						<div class="mb-2 flex flex-wrap gap-1.5">
+							{#if selectedCard.assignees?.length}
+								{#each selectedCard.assignees as assignee}
+									<span
+										class="inline-flex items-center gap-1 rounded-md bg-slate-700/90 px-2 py-1 text-xs text-slate-100 ring-1 ring-slate-500"
+									>
+										{assignee}
+										<button
+											type="button"
+											class="cursor-pointer rounded px-1 text-slate-300 shadow-sm shadow-slate-950/60 transition-all hover:bg-rose-500/25 hover:text-rose-200 active:translate-y-px"
+											on:click={() => removeEditorAssignee(assignee)}
+											title="Remove assignee"
+										>
+											✕
+										</button>
+									</span>
+								{/each}
+							{:else}
+								<p class="text-xs text-slate-400">No assignees yet.</p>
+							{/if}
+						</div>
+						<form class="flex w-full gap-1.5" on:submit|preventDefault={addEditorAssignee}>
+							<input
+								type="text"
+								class="min-w-0 flex-1 rounded-md border border-slate-600 bg-slate-800/80 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none"
+								placeholder="Add assignee..."
+								bind:value={editorNewAssignee}
+							/>
+							<button
+								type="submit"
+								class="h-8 w-16 min-w-[4rem] shrink-0 cursor-pointer whitespace-nowrap rounded-md bg-sky-600 px-2 py-1 text-center text-xs font-semibold text-white shadow-md shadow-sky-900/50 transition-all hover:bg-sky-500 active:translate-y-px"
+							>
+								+ Add
+							</button>
+						</form>
+					</section>
+
+					<section>
+						<h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-sky-200">
+							Due Date
+						</h3>
+						<div class="mb-2 flex flex-wrap gap-1.5">
+							{#if selectedCard.dueDate}
+								<span
+									class="inline-flex items-center gap-1 rounded-md bg-slate-700/90 px-2 py-1 text-xs text-slate-100 ring-1 ring-slate-500"
+								>
+									{selectedCard.dueDate}
+									<button
+										type="button"
+										class="cursor-pointer rounded px-1 text-slate-300 shadow-sm shadow-slate-950/60 transition-all hover:bg-rose-500/25 hover:text-rose-200 active:translate-y-px"
+										on:click={clearEditorDueDate}
+										title="Clear due date"
+									>
+										✕
+									</button>
+								</span>
+							{:else}
+								<p class="text-xs text-slate-400">No due date.</p>
+							{/if}
+						</div>
+						<form class="flex w-full gap-1.5" on:submit|preventDefault={saveEditorDueDate}>
+							<input
+								type="date"
+								class="min-w-0 flex-1 appearance-none rounded-md border border-slate-600 bg-slate-800/80 px-2 py-1 text-sm text-slate-100 focus:border-sky-400 focus:outline-none [color-scheme:dark] [&::-webkit-calendar-picker-indicator]:m-0 [&::-webkit-calendar-picker-indicator]:h-0 [&::-webkit-calendar-picker-indicator]:w-0 [&::-webkit-calendar-picker-indicator]:opacity-0"
+								value={editorDueDate}
+								on:input={handleEditorDueDateInput}
+							/>
+							<button
+								type="submit"
+								class="h-8 w-16 min-w-[4rem] shrink-0 cursor-pointer whitespace-nowrap rounded-md bg-sky-600 px-2 py-1 text-center text-xs font-semibold text-white shadow-md shadow-sky-900/50 transition-all hover:bg-sky-500 active:translate-y-px"
+							>
+								Set
+							</button>
+						</form>
+					</section>
+
+					<section class="md:col-span-2">
+						<h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-sky-200">Tags</h3>
+						<div class="mb-2 flex flex-wrap gap-1.5">
+							{#if selectedCard.tags?.length}
+								{#each selectedCard.tags as tag}
+									<span
+										class="inline-flex items-center gap-1 rounded-md bg-sky-500/20 px-2 py-1 text-xs text-sky-100 ring-1 ring-sky-300/30"
+									>
+										{tag}
+										<button
+											type="button"
+											class="cursor-pointer rounded px-1 text-sky-200 shadow-sm shadow-slate-950/60 transition-all hover:bg-rose-500/25 hover:text-rose-200 active:translate-y-px"
+											on:click={() => removeEditorTag(tag)}
+											title="Remove tag"
+										>
+											✕
+										</button>
+									</span>
+								{/each}
+							{:else}
+								<p class="text-xs text-slate-400">No tags yet.</p>
+							{/if}
+						</div>
+						<form class="flex gap-1.5" on:submit|preventDefault={addEditorTag}>
+							<input
+								type="text"
+								class="w-full rounded-md border border-slate-600 bg-slate-800/80 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none"
+								placeholder="Add tag..."
+								bind:value={editorNewTag}
+							/>
+							<button
+								type="submit"
+								class="h-8 w-16 min-w-[4rem] shrink-0 cursor-pointer whitespace-nowrap rounded-md bg-sky-600 px-2 py-1 text-center text-xs font-semibold text-white shadow-md shadow-sky-900/50 transition-all hover:bg-sky-500 active:translate-y-px"
+							>
+								+ Add
+							</button>
+						</form>
+					</section>
+				</div>
 			</div>
 		</div>
 	{/if}
@@ -866,7 +1085,7 @@
 		class="flex min-h-[calc(100vh-4rem)] w-screen items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-sky-900"
 	>
 		<p
-			class="rounded-md bg-white/80 px-3 py-1.5 text-sm text-slate-700 shadow-sm shadow-slate-300/40"
+			class="rounded-md border border-sky-300/30 bg-slate-900/85 px-3 py-1.5 text-sm text-slate-100 shadow-sm shadow-slate-950/60"
 		>
 			Chargement du board...
 		</p>

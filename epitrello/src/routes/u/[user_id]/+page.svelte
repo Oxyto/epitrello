@@ -1,10 +1,10 @@
 <script lang="ts">
-    import UserSearchBar from '../../user_search_bar.svelte';
-    import { browser } from '$app/environment';
-    import { goto } from '$app/navigation';
-    import { onMount } from 'svelte';
+	import UserSearchBar from '../../user_search_bar.svelte';
+	import { browser } from '$app/environment';
+	import { goto } from '$app/navigation';
+	import { onMount } from 'svelte';
 
-    	const { data } = $props<{
+	const { data } = $props<{
 		data: {
 			user_id: string;
 			email: string;
@@ -17,93 +17,97 @@
 		};
 	}>();
 
-    let ready = $state(false);
+	let ready = $state(false);
 
-    onMount(() => {
-        if (!browser) return;
+	onMount(() => {
+		if (!browser) return;
 
-        const raw = localStorage.getItem('user');
-        if (!raw) {
-            goto('/login');
-            return;
-        }
+		const raw = localStorage.getItem('user');
+		if (!raw) {
+			goto('/login');
+			return;
+		}
 
-        let currentUser: { id?: string } | null = null;
-        try {
-            currentUser = JSON.parse(raw);
-        } catch {
-            localStorage.removeItem('user');
-            localStorage.removeItem('authToken');
-            goto('/login');
-            return;
-        }
+		let currentUser: { id?: string } | null = null;
+		try {
+			currentUser = JSON.parse(raw);
+		} catch {
+			localStorage.removeItem('user');
+			localStorage.removeItem('authToken');
+			goto('/login');
+			return;
+		}
 
-        if (!currentUser?.id) {
-            goto('/login');
-            return;
-        }
+		if (!currentUser?.id) {
+			goto('/login');
+			return;
+		}
 
-        if (currentUser.id !== data.user_id) {
-            goto(`/u/${currentUser.id}#profile`);
-            return;
-        }
-        ready = true;
-    });
+		if (currentUser.id !== data.user_id) {
+			goto(`/u/${currentUser.id}#profile`);
+			return;
+		}
+		ready = true;
+	});
 
-    async function handleDeleteBoard(uuid: string) {
-        const confirmDelete = confirm('Supprimer ce board ?');
-        if (!confirmDelete) return;
+	async function handleDeleteBoard(uuid: string) {
+		const confirmDelete = confirm('Supprimer ce board ?');
+		if (!confirmDelete) return;
 
-        const res = await fetch(`/api/boards?id=${uuid}`, { method: 'DELETE' });
+		const res = await fetch(`/api/boards?id=${uuid}`, { method: 'DELETE' });
 
-        if (!res.ok) {
-            console.error('Erreur suppression board', await res.text());
-            return;
-        }
+		if (!res.ok) {
+			console.error('Erreur suppression board', await res.text());
+			return;
+		}
 
-        window.location.reload();
-    }
+		window.location.reload();
+	}
 </script>
 
 {#if ready}
-    <UserSearchBar />
+	<UserSearchBar />
 
-    <div class="ml-64 mr-64 my-16 text-gray-900 bg-gray-200 rounded-md p-4 items-center">
-            <h2 class="mb-2 text-xl font-mono font-bold select-none">Mes boards</h2>
-            {#if data.boards && data.boards.length}
-                <ul class="flex flex-wrap gap-3">
-                    {#each data.boards as board}
-                        <!-- j'ai enlevé le * ici -->
-                        <li class="w-48 rounded-md bg-sky-600 p-3 text-white shadow shadow-gray-400">
-                            <div class="flex items-center justify-between gap-2">
-                                <!-- ICI : lien vers la page du board -->
-                                <a
-                                    href={`/b/${board.uuid}`}
-                                    class="block hover:underline text-lg font-mono"
-                                >
-                                    {board.name}
-                                </a>
-                                <button
-                                    type="button"
-                                    class="rounded-md hover:cursor-pointer hover:text-red-500 transition-all w-8 h-8"
-                                    onclick={() => handleDeleteBoard(board.uuid)}
-                                    title="Supprimer ce board"
-                                >
-                                    X
-                                </button>
-                            </div>
-                            <p class="mt-1 text-xs text-gray-300">
-                                #{board.uuid}
-                            </p>
-                        </li>
-                    {/each}
-                </ul>
-            {:else}
-                <p class="text-sm font-mono text-gray-600">
-                    Aucun board pour le moment. Utilise le bouton "Create" pour en créer un.
-                </p>
-            {/if}
-    </div>
+	<div
+		class="mx-8 my-10 rounded-xl border border-sky-300/25 bg-slate-900/75 p-5 text-slate-100 shadow-lg shadow-slate-950/60 backdrop-blur-sm md:mx-24 xl:mx-64"
+	>
+		<h2 class="mb-3 text-xl font-bold tracking-wide select-none">Mes boards</h2>
+		{#if data.boards && data.boards.length}
+			<ul class="flex flex-wrap gap-3">
+				{#each data.boards as board}
+					<!-- j'ai enlevé le * ici -->
+					<li
+						class="w-48 rounded-lg border border-sky-300/25 bg-slate-800/85 p-3 text-slate-100 shadow-md shadow-slate-950/50"
+					>
+						<div class="flex items-center justify-between gap-2">
+							<!-- ICI : lien vers la page du board -->
+							<a
+								href={`/b/${board.uuid}`}
+								class="block text-lg font-semibold text-slate-100 hover:underline"
+							>
+								{board.name}
+							</a>
+							<button
+								type="button"
+								class="h-8 w-8 rounded-md border border-rose-300/25 bg-slate-700/80 text-rose-200 transition-all hover:cursor-pointer hover:bg-rose-500/20 hover:text-rose-100"
+								onclick={() => handleDeleteBoard(board.uuid)}
+								title="Supprimer ce board"
+							>
+								X
+							</button>
+						</div>
+						<p class="mt-1 text-xs text-slate-400">
+							#{board.uuid}
+						</p>
+					</li>
+				{/each}
+			</ul>
+		{:else}
+			<p class="text-sm text-slate-300">
+				Aucun board pour le moment. Utilise le bouton "Create" pour en créer un.
+			</p>
+		{/if}
+	</div>
 {:else}
-    <p class="p-4 text-gray-500">Redirection...</p>
+	<p class="p-4 text-slate-300">Redirection...</p>
 {/if}
