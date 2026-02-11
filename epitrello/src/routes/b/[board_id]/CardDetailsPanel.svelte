@@ -20,15 +20,33 @@
 	function close() {
 		dispatch('close', {});
 	}
+
+	function handleBackdropClick(event: MouseEvent) {
+		if (event.target === event.currentTarget) {
+			close();
+		}
+	}
+
+	function handleBackdropKeydown(event: KeyboardEvent) {
+		if (event.key === 'Escape') {
+			close();
+		}
+	}
 </script>
 
 {#if card}
 	<!-- backdrop -->
-	<div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75" on:click={close}>
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75"
+		role="dialog"
+		aria-modal="true"
+		tabindex="0"
+		onclick={handleBackdropClick}
+		onkeydown={handleBackdropKeydown}
+	>
 		<!-- panneau -->
 		<div
 			class="flex max-h-[90vh] w-full max-w-3xl overflow-hidden rounded-xl border border-sky-300/25 bg-slate-900/95 text-slate-100 shadow-xl shadow-slate-950/70"
-			on:click|stopPropagation
 		>
 			<div class="flex-1 p-6 space-y-4 overflow-y-auto">
 				<!-- Header -->
@@ -43,7 +61,7 @@
 					<button
 						type="button"
 						class="h-8 w-8 cursor-pointer rounded-full border border-slate-500/70 bg-slate-800/90 text-lg text-slate-300 shadow-sm shadow-slate-950/60 transition-all hover:border-sky-300/70 hover:bg-sky-500/20 hover:text-slate-100"
-						on:click={close}
+						onclick={close}
 					>
 						✕
 					</button>

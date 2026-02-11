@@ -45,10 +45,10 @@
 		};
 	}>();
 
-	const boardId: string | undefined = data.board?.id;
+	const boardId = $derived(data.board?.id);
 
 	let ready = $state(false);
-	let board_name = $state(data.board?.name ?? 'Board');
+	let board_name = $state('Board');
 
 	let lists = $state<UiList[]>([]);
 	let newListName = $state('');
@@ -164,6 +164,7 @@
 			return;
 		}
 
+		board_name = data.board?.name ?? board_name;
 		await loadBoardFull();
 		ready = true;
 	});
@@ -502,11 +503,14 @@
 		await Promise.all(
 			updates.map(async ({ listId, order }) => {
 				try {
-					await fetch('/api/lists', {
+					const res = await fetch('/api/lists', {
 						method: 'PATCH',
 						headers: { 'Content-Type': 'application/json' },
 						body: JSON.stringify({ listId, order })
 					});
+					if (!res.ok) {
+						console.error('Erreur persist list order', listId, order, await res.text());
+					}
 				} catch (err) {
 					console.error('Erreur persist list order', err);
 				}
@@ -514,24 +518,11 @@
 		);
 	}
 
-	function getPreviewInsertIndex(targetListIndex: number, targetCardIndex: number) {
-		if (!draggedCardRef) return targetCardIndex;
-
-		if (
-			draggedCardRef.listIndex === targetListIndex &&
-			draggedCardRef.cardIndex < targetCardIndex
-		) {
-			return Math.max(0, targetCardIndex - 1);
-		}
-
-		return targetCardIndex;
-	}
-
 	function setCardDropPreview(targetListIndex: number, targetCardIndex: number) {
 		if (!draggedCardRef) return;
 		cardDropPreview = {
 			listIndex: targetListIndex,
-			targetIndex: getPreviewInsertIndex(targetListIndex, targetCardIndex)
+			targetIndex: targetCardIndex
 		};
 	}
 
@@ -608,26 +599,74 @@
 		await persistListsOrder();
 	}
 
-	function handleCardDragOver(event: CustomEvent<{ listIndex: number; cardIndex: number }>) {
-		if (!draggedCardRef) return;
-		const { listIndex, cardIndex } = event.detail;
-		setCardDropPreview(listIndex, cardIndex);
+	function handleListPreviewDragOver(insertIndex: number, event: DragEvent) {
+		if (draggedListIndex === null) return;
+		event.preventDefault();
+		setListDropPreview(insertIndex);
 	}
 
-	function handleCardListDragOver(listIndex: number) {
+	async function handleListPreviewDrop(insertIndex: number, event: DragEvent) {
+		if (draggedListIndex === null) return;
+		event.preventDefault();
+
+		const moved = moveListInMemory(draggedListIndex, insertIndex);
+		draggedListIndex = null;
+		listDropPreviewIndex = null;
+		if (!moved || !moved.changed) return;
+
+		selectedCardRef = null;
+		await persistListsOrder();
+	}
+
+	function handleCardDragOver(
+		event: CustomEvent<{ listIndex: number; cardIndex: number; dropAfter: boolean }>
+	) {
+		if (!draggedCardRef) return;
+		const { listIndex, cardIndex, dropAfter } = event.detail;
+		const targetIndex = cardIndex + (dropAfter ? 1 : 0);
+		setCardDropPreview(listIndex, targetIndex);
+	}
+
+	function getCardInsertIndexFromPointer(listIndex: number, event: DragEvent) {
+		const list = lists[listIndex];
+		const currentTarget = event.currentTarget as HTMLElement | null;
+		if (!list || !currentTarget) return 0;
+
+		const cardElements = Array.from(
+			currentTarget.querySelectorAll<HTMLElement>('[data-card-item="true"]')
+		);
+		if (!cardElements.length) return 0;
+
+		for (let i = 0; i < cardElements.length; i += 1) {
+			const rect = cardElements[i].getBoundingClientRect();
+			const shouldInsertBefore = event.clientY < rect.top + rect.height / 2;
+			if (shouldInsertBefore) {
+				return i;
+			}
+		}
+
+		return cardElements.length;
+	}
+
+	function handleCardListDragOver(listIndex: number, event: DragEvent) {
 		if (!draggedCardRef || !lists[listIndex]) return;
-		setCardDropPreview(listIndex, lists[listIndex].cards.length);
+		event.preventDefault();
+		const targetIndex = getCardInsertIndexFromPointer(listIndex, event);
+		setCardDropPreview(listIndex, targetIndex);
 	}
 
-	async function handleDropOnCard(event: CustomEvent<{ listIndex: number; cardIndex: number }>) {
+	async function handleDropOnCard(
+		event: CustomEvent<{ listIndex: number; cardIndex: number; dropAfter: boolean }>
+	) {
 		if (!draggedCardRef) return;
-		const { listIndex, cardIndex } = event.detail;
+		const { listIndex, cardIndex, dropAfter } = event.detail;
+		const targetIndex = cardIndex + (dropAfter ? 1 : 0);
 
 		const moved = moveCardInMemory(
 			draggedCardRef.listIndex,
 			draggedCardRef.cardIndex,
 			listIndex,
-			cardIndex
+			targetIndex
 		);
 
 		draggedCardRef = null;
@@ -637,14 +676,16 @@
 		await persistCardMove(moved.card.uuid, moved.fromListUuid, moved.toListUuid, moved.insertIndex);
 	}
 
-	async function handleDropOnList(listIndex: number) {
+	async function handleDropOnList(listIndex: number, event: DragEvent) {
 		if (!draggedCardRef || !lists[listIndex]) return;
+		event.preventDefault();
+		const targetIndex = getCardInsertIndexFromPointer(listIndex, event);
 
 		const moved = moveCardInMemory(
 			draggedCardRef.listIndex,
 			draggedCardRef.cardIndex,
 			listIndex,
-			lists[listIndex].cards.length
+			targetIndex
 		);
 
 		draggedCardRef = null;
@@ -808,7 +849,7 @@
 				type="text"
 				bind:value={board_name}
 				placeholder="Board name..."
-				on:blur={persistBoardName}
+				onblur={persistBoardName}
 			/>
 		</div>
 
@@ -816,29 +857,34 @@
 			{#each lists as list, i}
 				{#if listDropPreviewIndex === i}
 					<div
-						class="pointer-events-none min-h-[180px] min-w-[220px] rounded-xl border-2 border-dashed border-sky-300/70 bg-sky-400/20"
+						class={`min-h-[180px] min-w-[220px] rounded-xl border-2 border-dashed border-sky-300/70 bg-sky-400/20 ${draggedListIndex === null ? 'pointer-events-none' : ''}`}
+						role="group"
+						aria-label="List drop preview"
+						ondragover={(event) => handleListPreviewDragOver(i, event)}
+						ondrop={(event) => void handleListPreviewDrop(i, event)}
 					></div>
 				{/if}
 				<div
-					class="group/list relative min-w-[220px] rounded-xl border border-sky-300/20 bg-slate-800/70 p-3 text-slate-100 shadow-md shadow-slate-950/50 backdrop-blur-sm"
+					class="group/list relative flex min-w-[220px] flex-col rounded-xl border border-sky-300/20 bg-slate-800/70 p-3 text-slate-100 shadow-md shadow-slate-950/50 backdrop-blur-sm"
+					role="group"
 					draggable="true"
-					on:dragstart={(event) => handleListDragStart(i, event)}
-					on:dragend={handleListDragEnd}
-					on:dragover={(event) => handleListDragOver(i, event)}
-					on:drop={(event) => handleListDrop(i, event)}
+					ondragstart={(event) => handleListDragStart(i, event)}
+					ondragend={handleListDragEnd}
+					ondragover={(event) => handleListDragOver(i, event)}
+					ondrop={(event) => handleListDrop(i, event)}
 				>
 					<div class="flex min-w-full flex-row items-center gap-2">
 						<input
 							class="w-full flex-1 rounded-md border-0 bg-transparent px-1 py-1 font-mono text-lg font-bold text-slate-100 transition-colors hover:bg-slate-700/50"
 							value={list.name}
-							on:input={(e) => updateListName(i, e)}
+							oninput={(e) => updateListName(i, e)}
 						/>
 						<div class="group/list-corner relative h-8 w-8 shrink-0">
 							<button
 								type="button"
 								title="Delete list"
 								class="pointer-events-none absolute right-0 top-0 h-8 w-8 cursor-pointer rounded-full border border-rose-300/20 bg-slate-800/90 text-center text-sm font-bold text-rose-200 opacity-0 shadow-sm shadow-black/30 transition-all group-hover/list-corner:pointer-events-auto group-hover/list-corner:opacity-100 hover:border-rose-300/60 hover:bg-rose-500/20 hover:text-rose-100"
-								on:click={() => deleteList(i)}
+								onclick={() => deleteList(i)}
 							>
 								✕
 							</button>
@@ -846,9 +892,21 @@
 					</div>
 
 					<ol
-						class="mt-3 flex min-h-14 flex-col gap-1.5"
-						on:dragover|preventDefault={() => handleCardListDragOver(i)}
-						on:drop|preventDefault={() => handleDropOnList(i)}
+						class="mt-3 flex min-h-0 flex-1 flex-col gap-1.5"
+						ondragover={(event) => {
+							if (draggedListIndex !== null) {
+								handleListDragOver(i, event);
+								return;
+							}
+							handleCardListDragOver(i, event);
+						}}
+						ondrop={(event) => {
+							if (draggedListIndex !== null) {
+								void handleListDrop(i, event);
+								return;
+							}
+							void handleDropOnList(i, event);
+						}}
 					>
 						{#each list.cards as card, j}
 							{#if cardDropPreview && cardDropPreview.listIndex === i && cardDropPreview.targetIndex === j}
@@ -876,17 +934,33 @@
 						{/if}
 					</ol>
 
-					<form class="mt-2.5 flex gap-1.5" on:submit|preventDefault={() => addCard(i)}>
+					<form
+						class="mt-2.5 flex gap-1.5"
+						ondragover={(event) => {
+							if (draggedListIndex !== null) {
+								handleListDragOver(i, event);
+							}
+						}}
+						ondrop={(event) => {
+							if (draggedListIndex !== null) {
+								void handleListDrop(i, event);
+							}
+						}}
+						onsubmit={(event) => {
+							event.preventDefault();
+							addCard(i);
+						}}
+					>
 						<input
 							type="text"
 							class="w-full rounded-md border border-slate-600/60 bg-slate-700/80 p-1.5 font-mono text-sm text-slate-100 shadow-sm shadow-black/20 placeholder:text-slate-300"
 							placeholder="New card title..."
 							value={list.newCardTitle}
-							on:input={(e) => updateListNewCardTitle(i, e)}
+							oninput={(e) => updateListNewCardTitle(i, e)}
 						/>
 						<button
 							type="submit"
-							class="w-20 rounded-md bg-sky-500 px-2 text-sm font-semibold text-slate-900 shadow-sm shadow-sky-900/40 transition-colors hover:bg-sky-400"
+							class="w-20 cursor-pointer rounded-md bg-sky-600 px-2 text-sm font-semibold text-white shadow-sm shadow-sky-900/50 transition-colors hover:bg-sky-500"
 						>
 							+ Add
 						</button>
@@ -895,23 +969,33 @@
 			{/each}
 			{#if listDropPreviewIndex === lists.length}
 				<div
-					class="pointer-events-none min-h-[180px] min-w-[220px] rounded-xl border-2 border-dashed border-sky-300/70 bg-sky-400/20"
+					class={`min-h-[180px] min-w-[220px] rounded-xl border-2 border-dashed border-sky-300/70 bg-sky-400/20 ${draggedListIndex === null ? 'pointer-events-none' : ''}`}
+					role="group"
+					aria-label="List drop preview"
+					ondragover={(event) => handleListPreviewDragOver(lists.length, event)}
+					ondrop={(event) => void handleListPreviewDrop(lists.length, event)}
 				></div>
 			{/if}
 
 			<div
 				class="min-w-[220px] rounded-xl border border-dashed border-sky-300/35 bg-slate-800/55 p-3 text-slate-100 shadow-md shadow-slate-950/40 backdrop-blur-sm"
 			>
-				<form on:submit|preventDefault={addList} class="flex flex-col gap-1.5">
+				<form
+					onsubmit={(event) => {
+						event.preventDefault();
+						addList();
+					}}
+					class="flex flex-col gap-2"
+				>
 					<input
 						type="text"
-						class="w-full rounded-md border border-slate-600/60 bg-slate-700/80 p-1.5 font-mono text-sm text-slate-100 shadow-sm shadow-black/20 placeholder:text-slate-300"
+						class="w-full rounded-md border border-slate-600/60 bg-slate-700/80 p-1.5 font-mono text-sm text-slate-100 shadow-sm shadow-black/20 placeholder:text-slate-300 h-9"
 						placeholder="New list name..."
 						bind:value={newListName}
 					/>
 					<button
 						type="submit"
-						class="w-full rounded-md bg-sky-500 px-3 py-1.5 text-sm font-semibold text-slate-900 shadow-sm shadow-sky-900/40 transition-colors hover:bg-sky-400"
+						class="h-9 hover:cursor-pointer w-full rounded-md bg-sky-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm shadow-sky-900/50 transition-colors hover:bg-sky-500"
 					>
 						+ Add List
 					</button>
@@ -929,13 +1013,13 @@
 						type="text"
 						class="min-w-0 flex-1 rounded-md border border-slate-600 bg-slate-800/80 px-2 py-1 text-lg font-bold text-slate-100 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none"
 						value={selectedCard.title}
-						on:input={handleEditorTitleInput}
-						on:blur={handleEditorTitleBlur}
+						oninput={handleEditorTitleInput}
+						onblur={handleEditorTitleBlur}
 					/>
 					<button
 						type="button"
 						class="ml-2 mt-0.5 h-8 w-8 shrink-0 cursor-pointer rounded-full border border-slate-500/70 bg-slate-800/90 text-slate-300 shadow-md shadow-slate-950/70 transition-all hover:border-sky-300/70 hover:bg-sky-500/20 hover:text-slate-100"
-						on:click={closeDetails}
+						onclick={closeDetails}
 					>
 						✕
 					</button>
@@ -953,8 +1037,8 @@
 							class="min-h-28 w-full rounded-md border border-slate-600 bg-slate-800/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none"
 							placeholder="Write a description..."
 							value={editorDescription}
-							on:input={handleEditorDescriptionInput}
-							on:blur={handleEditorDescriptionBlur}
+							oninput={handleEditorDescriptionInput}
+							onblur={handleEditorDescriptionBlur}
 						></textarea>
 					</section>
 
@@ -972,7 +1056,7 @@
 										<button
 											type="button"
 											class="cursor-pointer rounded px-1 text-slate-300 shadow-sm shadow-slate-950/60 transition-all hover:bg-rose-500/25 hover:text-rose-200 active:translate-y-px"
-											on:click={() => removeEditorAssignee(assignee)}
+											onclick={() => removeEditorAssignee(assignee)}
 											title="Remove assignee"
 										>
 											✕
@@ -983,7 +1067,13 @@
 								<p class="text-xs text-slate-400">No assignees yet.</p>
 							{/if}
 						</div>
-						<form class="flex w-full gap-1.5" on:submit|preventDefault={addEditorAssignee}>
+						<form
+							class="flex w-full gap-1.5"
+							onsubmit={(event) => {
+								event.preventDefault();
+								addEditorAssignee();
+							}}
+						>
 							<input
 								type="text"
 								class="min-w-0 flex-1 rounded-md border border-slate-600 bg-slate-800/80 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none"
@@ -1012,7 +1102,7 @@
 									<button
 										type="button"
 										class="cursor-pointer rounded px-1 text-slate-300 shadow-sm shadow-slate-950/60 transition-all hover:bg-rose-500/25 hover:text-rose-200 active:translate-y-px"
-										on:click={clearEditorDueDate}
+										onclick={clearEditorDueDate}
 										title="Clear due date"
 									>
 										✕
@@ -1022,12 +1112,18 @@
 								<p class="text-xs text-slate-400">No due date.</p>
 							{/if}
 						</div>
-						<form class="flex w-full gap-1.5" on:submit|preventDefault={saveEditorDueDate}>
+						<form
+							class="flex w-full gap-1.5"
+							onsubmit={(event) => {
+								event.preventDefault();
+								saveEditorDueDate();
+							}}
+						>
 							<input
 								type="date"
 								class="min-w-0 flex-1 appearance-none rounded-md border border-slate-600 bg-slate-800/80 px-2 py-1 text-sm text-slate-100 focus:border-sky-400 focus:outline-none [color-scheme:dark] [&::-webkit-calendar-picker-indicator]:m-0 [&::-webkit-calendar-picker-indicator]:h-0 [&::-webkit-calendar-picker-indicator]:w-0 [&::-webkit-calendar-picker-indicator]:opacity-0"
 								value={editorDueDate}
-								on:input={handleEditorDueDateInput}
+								oninput={handleEditorDueDateInput}
 							/>
 							<button
 								type="submit"
@@ -1050,7 +1146,7 @@
 										<button
 											type="button"
 											class="cursor-pointer rounded px-1 text-sky-200 shadow-sm shadow-slate-950/60 transition-all hover:bg-rose-500/25 hover:text-rose-200 active:translate-y-px"
-											on:click={() => removeEditorTag(tag)}
+											onclick={() => removeEditorTag(tag)}
 											title="Remove tag"
 										>
 											✕
@@ -1061,7 +1157,13 @@
 								<p class="text-xs text-slate-400">No tags yet.</p>
 							{/if}
 						</div>
-						<form class="flex gap-1.5" on:submit|preventDefault={addEditorTag}>
+						<form
+							class="flex gap-1.5"
+							onsubmit={(event) => {
+								event.preventDefault();
+								addEditorTag();
+							}}
+						>
 							<input
 								type="text"
 								class="w-full rounded-md border border-slate-600 bg-slate-800/80 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none"

@@ -119,7 +119,7 @@
 				id="epitrello-logo"
 				src={Epitrellologo}
 				alt="Epitrello Logo"
-				class="w-12 invert-100 m-4 scale-120"
+				class="w-12 m-4 scale-120"
 			/>
 			<h2 class="m-2 text-center text-2xl font-bold tracking-wide text-slate-100">
 				Login to EpiTrello

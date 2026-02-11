@@ -217,12 +217,19 @@ export class ListConnector {
 	}
 
 	static async del(listId: UUID) {
+		const listData = await rdb.hgetall(`list:${listId}`);
+		const boardId = listData?.board;
 		const cards_query = await rdb.smembers(`list:${listId}:cards`);
 
 		if (cards_query && cards_query.length > 0) {
 			await Promise.all(cards_query.map((cardId) => CardConnector.del(cardId as UUID)));
 		}
-		await Promise.all([rdb.del(`list:${listId}`), rdb.del(`list:${listId}:cards`)]);
+
+		const cleanupOps = [rdb.del(`list:${listId}`), rdb.del(`list:${listId}:cards`)];
+		if (boardId) {
+			cleanupOps.push(rdb.srem(`board:${boardId}:lists`, listId));
+		}
+		await Promise.all(cleanupOps);
 	}
 }
 
