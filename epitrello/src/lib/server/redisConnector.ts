@@ -343,16 +343,26 @@ export class TagConnector {
 			type: tag.type,
 			color: tag.color
 		});
+
+		await rdb.del(`tag:${tag.uuid}:attributes`);
+		if (tag.attributes.length > 0) {
+			await Promise.all(
+				tag.attributes.map((attribute) => rdb.sadd(`tag:${tag.uuid}:attributes`, attribute))
+			);
+		}
 	}
 
 	static async get(tagId: UUID) {
-		const tag_query = await rdb.hgetall(`tag:${tagId}`);
+		const [tag_query, attributes] = await Promise.all([
+			rdb.hgetall(`tag:${tagId}`),
+			rdb.smembers(`tag:${tagId}:attributes`)
+		]);
 
 		if (!tag_query || Object.keys(tag_query).length === 0) {
 			return null;
 		}
 
-		return TagSchema.parse(tag_query);
+		return TagSchema.parse({ ...tag_query, attributes });
 	}
 
 	static async getAllByCardId(cardId: UUID) {

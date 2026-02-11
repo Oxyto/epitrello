@@ -6,7 +6,7 @@ export const TagSchema = z.object({
 	card: z.uuidv7(),
 	type: z.string(),
 	color: z.string(),
-	attributes: z.array(z.string())
+	attributes: z.array(z.string()).default([])
 });
 
 export type ITag = z.infer<typeof TagSchema>;
