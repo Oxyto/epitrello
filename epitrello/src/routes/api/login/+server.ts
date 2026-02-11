@@ -1,24 +1,40 @@
-import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { saveUser, type User } from '$lib/server/fakeDb';
+import { json } from '@sveltejs/kit';
+import type { UUID } from 'crypto';
+import { UserConnector } from '$lib/server/redisConnector';
+import type { IUser } from '$lib/interfaces/IUser';
 
 export const POST: RequestHandler = async ({ request }) => {
-    const body = await request.json().catch(() => null);
+	const body = await request.json().catch(() => null);
 
-    if (!body || !body.email) {
-        return json({ error: 'Email requis' }, { status: 400 });
-    }
+	if (!body || !body.email) {
+		return json({ error: 'Email manquant' }, { status: 400 });
+	}
 
-    const email: string = body.email;
-    const name: string | null = body.name ?? null;
+	const email: string = String(body.email).trim().toLowerCase();
+	const name: string = body.name ?? email.split('@')[0];
 
-    const user: User = {
-        id: '1',
-        email,
-        name
-    };
+	let user = await UserConnector.getByEmail(email);
 
-    saveUser(user);
+	if (!user) {
+		const uuid = Bun.randomUUIDv7() as UUID;
 
-    return json(user);
+		user = {
+			uuid,
+			admin: 'no',
+			username: name,
+			email,
+			password_hash: '',
+			profile_picture_url: '',
+			boards: []
+		} satisfies IUser;
+
+		await UserConnector.save(user);
+	}
+
+	return json({
+		id: user.uuid,
+		email: user.email,
+		name: user.username
+	});
 };

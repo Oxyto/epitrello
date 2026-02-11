@@ -1,15 +1,22 @@
 <script lang="ts">
-    export let login: boolean;
+	import epitrello_logo from '$lib/assets/logos/epitrello-logo.png';
+	export let login: boolean;
 </script>
 
-<div id="top-bar" class="flex items-center gap-4 bg-gray-800 p-4 text-white shadow-lg shadow-gray-400 sticky top-0 h-16">
-	<img id="epitrello-logo" src="/logos/epitrello-logo.png" alt="Epitrello Logo" />
-	<h1 id="title" class="select-none">EpiTrello</h1>
-    {#if login === false}
-	<a
-		id="login"
-		href="/login"
-		class="ml-auto select-none rounded bg-blue-600 px-4 py-2 hover:bg-blue-700">Login</a
-	>
-    {/if}
+<div
+	id="top-bar"
+	class="sticky top-0 flex h-16 items-center gap-4 bg-sky-600 p-4 text-white shadow-lg"
+>
+	<a href="/" class="flex flex-row items-center hover:cursor-pointer">
+		<img id="epitrello-logo" src={epitrello_logo} alt="Epitrello Logo" class="w-12" />
+		<h1 id="title" class="font-mono text-xl select-none ml-2">EpiTrello</h1>
+	</a>
+	{#if login === false}
+		<a
+			id="login"
+			href="/login"
+			class="ml-auto rounded-md bg-sky-500 px-4 py-2 shadow transition-all select-none hover:bg-white hover:text-black"
+			>Login</a
+		>
+	{/if}
 </div>

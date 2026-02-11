@@ -1,133 +1,80 @@
 <script lang="ts">
-	import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher } from 'svelte';
 
-	export let card: {
-		id: number;
-		title: string;
-		tags?: string[];
-	};
+  const { card, listIndex, cardIndex } = $props();
 
-	export let listIndex: number;
-	export let cardIndex: number;
+  const dispatch = createEventDispatcher<{
+    updateTitle: { listIndex: number; cardIndex: number; title: string };
+    deleteCard: { listIndex: number; cardIndex: number };
+    moveCard: { listIndex: number; cardIndex: number; direction: number };
+    openDetails: { listIndex: number; cardIndex: number };
+  }>();
 
-	const dispatch = createEventDispatcher();
+  let title = card.title;
 
-	let editing = false;
-	let editedTitle = card.title;
-	let newTag = '';
+  function handleTitleBlur() {
+    const t = title.trim();
+    if (!t || t === card.title) return;
+    dispatch('updateTitle', { listIndex, cardIndex, title: t });
+  }
 
-	function startEdit() {
-		editing = true;
-		editedTitle = card.title;
-	}
+  function handleDelete() {
+    dispatch('deleteCard', { listIndex, cardIndex });
+  }
 
-	function saveTitle() {
-		const title = editedTitle.trim();
-		if (!title) return;
-		dispatch('updateTitle', { listIndex, cardIndex, title });
-		editing = false;
-	}
+  function handleMove(direction: number) {
+    dispatch('moveCard', { listIndex, cardIndex, direction });
+  }
 
-	function submitTag() {
-		const tag = newTag.trim();
-		if (!tag) return;
-		dispatch('addTag', { listIndex, cardIndex, tag });
-		newTag = '';
-	}
-
-	function moveLeft() {
-		dispatch('moveCard', { listIndex, cardIndex, direction: -1 });
-	}
-
-	function moveRight() {
-		dispatch('moveCard', { listIndex, cardIndex, direction: 1 });
-	}
-
-	function deleteCard() {
-		dispatch('deleteCard', { listIndex, cardIndex });
-	}
-
+  function handleOpenDetails() {
+    dispatch('openDetails', { listIndex, cardIndex });
+  }
 </script>
 
-<li class="flex flex-col gap-2 rounded bg-gray-700 p-2" draggable="false">
-	<div class="flex items-center gap-2">
-		<input
-			type="checkbox"
-			class="rounded-4xl mr-2 hover:cursor-pointer"
-			title="Mark as complete"
-		/>
+<li
+  class="flex flex-col gap-2 rounded-md bg-sky-600 p-3 text-gray-100 shadow shadow-gray-400 hover:bg-sky-500 hover:cursor-pointer transition-colors"
+  on:click={handleOpenDetails}
+>
+  <div class="mb-2 flex items-center gap-2 pr-2 pl-2">
+    <input
+      type="checkbox"
+      class="scale-150 rounded border-0 shadow transition-all delay-100 checked:bg-green-500 hover:cursor-pointer focus:outline-0"
+      title="Mark as complete"
+      on:click|stopPropagation
+    />
 
-		{#if editing}
-			<input
-				class="flex-1 rounded border-0 bg-gray-600 px-2 py-1 text-sm"
-				bind:value={editedTitle}
-				on:keydown={(e) => e.key === 'Enter' && saveTitle()}
-				on:blur={saveTitle}
-				autofocus
-			/>
-		{:else}
-			<a
-				class="flex-1 select-none rounded border-0 bg-gray-700 px-2 py-1 text-sm hover:bg-gray-600"
-				href={`#c-${card.id}`}
-				on:dblclick={startEdit}
-				title="Double-click pour éditer"
-			>
-				{card.title}
-			</a>
-		{/if}
-	</div>
+    <input
+      class="flex-1 rounded border-0 bg-sky-600 font-mono text-xl font-semibold text-gray-100 focus:bg-sky-500 focus:outline-none"
+      bind:value={title}
+      on:blur={handleTitleBlur}
+      on:click|stopPropagation
+    />
 
-	{#if card.tags && card.tags.length}
-		<div class="flex flex-wrap gap-1">
-			{#each card.tags as tag}
-				<span class="rounded-full bg-gray-500 px-2 py-0.5 text-xs">
-					{tag}
-				</span>
-			{/each}
-		</div>
-	{/if}
+    <button
+      type="button"
+      class="w-8 pb-1 font-mono text-lg font-bold text-gray-100 transition-all hover:text-red-500 hover:cursor-pointer"
+      on:click|stopPropagation={handleDelete}
+    >
+      [X]
+    </button>
+  </div>
 
-	<div class="mt-1 flex gap-2">
-		<input
-			type="text"
-			class="flex-1 rounded border-0 bg-gray-600 px-2 py-1 text-xs"
-			placeholder="New tag..."
-			bind:value={newTag}
-			on:keydown={(e) => e.key === 'Enter' && submitTag()}
-		/>
-		<button
-			class="rounded bg-gray-600 px-2 text-xs hover:bg-gray-500"
-			type="button"
-			on:click={submitTag}
-		>
-			+ Tag
-		</button>
-	</div>
-
-	<div class="mt-1 flex items-center justify-between gap-1 text-xs text-gray-300">
-		<button
-			type="button"
-			class="rounded bg-red-600 px-2 py-0.5 hover:bg-red-500"
-			on:click={deleteCard}
-		>
-			Delete
-		</button>
-
-		<div class="flex gap-1">
-			<button
-				type="button"
-				class="rounded bg-gray-600 px-2 py-0.5 hover:bg-gray-500"
-				on:click={moveLeft}
-			>
-				←
-			</button>
-			<button
-				type="button"
-				class="rounded bg-gray-600 px-2 py-0.5 hover:bg-gray-500"
-				on:click={moveRight}
-			>
-				→
-			</button>
-		</div>
-	</div>
+  <div class="mt-2 flex gap-2">
+    <button
+      type="button"
+      class="font-mono text-2xl rounded-md bg-sky-500 px-3 py-0.5 shadow transition-all hover:cursor-pointer hover:bg-sky-400"
+      on:click|stopPropagation={() => handleMove(-1)}
+      title="Move left"
+    >
+      ←
+    </button>
+    <button
+      type="button"
+      class="font-mono text-2xl rounded-md bg-sky-500 px-3 py-0.5 shadow transition-all hover:cursor-pointer hover:bg-sky-400"
+      on:click|stopPropagation={() => handleMove(1)}
+      title="Move right"
+    >
+      →
+    </button>
+  </div>
 </li>
