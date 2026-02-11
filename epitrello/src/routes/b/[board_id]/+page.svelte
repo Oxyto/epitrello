@@ -8,6 +8,10 @@
 		id: number;
 		uuid?: string;
 		title: string;
+		description: string;
+		dueDate: string;
+		assignees: string[];
+		completed: boolean;
 		tags: string[];
 	};
 
@@ -18,85 +22,99 @@
 		newCardTitle: string;
 	};
 	type BoardFullResponse = {
-	board: { id: string; name: string };
-	lists: Array<{
-		uuid: string;
-		name: string;
-		order: number;
-		cards: Array<{
+		board: { id: string; name: string };
+		lists: Array<{
 			uuid: string;
-			title: string;
+			name: string;
 			order: number;
-			tags: string[];
+			cards: Array<{
+				uuid: string;
+				title: string;
+				description: string;
+				dueDate: string;
+				assignees: string[];
+				order: number;
+				completed: boolean;
+				tags: string[];
+			}>;
 		}>;
-	}>;
-};
+	};
 	const { data } = $props<{
 		data: {
 			board: { id: string; name: string } | undefined;
 		};
 	}>();
 
-	const boardId: string | undefined = data.board?.id;
-	let panelTagInput = $state('');
+	const boardId = $derived(data.board?.id);
+
 	let ready = $state(false);
-	let board_name = $state(data.board?.name ?? 'Board');
+	let board_name = $state('Board');
 
 	let lists = $state<UiList[]>([]);
 	let newListName = $state('');
 	let nextLocalCardId = 1;
-		let selectedCardRef = $state<{ listIndex: number; cardIndex: number } | null>(null);
+	let selectedCardRef = $state<{ listIndex: number; cardIndex: number } | null>(null);
+	let draggedCardRef = $state<{ listIndex: number; cardIndex: number } | null>(null);
+	let cardDropPreview = $state<{ listIndex: number; targetIndex: number } | null>(null);
+	let draggedListIndex = $state<number | null>(null);
+	let listDropPreviewIndex = $state<number | null>(null);
+	let editorDescription = $state('');
+	let editorDueDate = $state('');
+	let editorNewTag = $state('');
+	let editorNewAssignee = $state('');
 
 	const selectedList = $derived<UiList | null>(
-		selectedCardRef && lists[selectedCardRef.listIndex]
-			? lists[selectedCardRef.listIndex]
-			: null
+		selectedCardRef && lists[selectedCardRef.listIndex] ? lists[selectedCardRef.listIndex] : null
 	);
 
 	const selectedCard = $derived<UiCard | null>(
-		selectedCardRef &&
-		selectedList &&
-		selectedList.cards[selectedCardRef.cardIndex]
+		selectedCardRef && selectedList && selectedList.cards[selectedCardRef.cardIndex]
 			? selectedList.cards[selectedCardRef.cardIndex]
 			: null
 	);
 
 	function applyLoadedState(payload: BoardFullResponse) {
-	if (!payload || !payload.board) return;
+		if (!payload || !payload.board) return;
 
-	board_name = payload.board.name ?? board_name;
+		board_name = payload.board.name ?? board_name;
+		let localId = 1;
 
-	const mapped: UiList[] = payload.lists.map((list) => ({
-		uuid: list.uuid,
-		name: list.name,
-		newCardTitle: '',
-		cards: list.cards.map((card, idx) => ({
-			id: idx + 1,
-			uuid: card.uuid,
-			title: card.title,
-			tags: card.tags ?? []
-		}))
-	}));
+		const mapped: UiList[] = payload.lists.map((list) => ({
+			uuid: list.uuid,
+			name: list.name,
+			newCardTitle: '',
+			cards: list.cards.map((card) => ({
+				id: localId++,
+				uuid: card.uuid,
+				title: card.title,
+				description: card.description ?? '',
+				dueDate: card.dueDate ?? '',
+				assignees: card.assignees ?? [],
+				completed: card.completed ?? false,
+				tags: card.tags ?? []
+			}))
+		}));
 
-	lists = mapped;
-}
-
-async function loadBoardFull() {
-	if (!browser || !boardId) return;
-
-	try {
-		const res = await fetch(`/api/board-full?boardId=${boardId}`);
-		if (!res.ok) {
-			console.warn('Erreur /api/board-full', await res.text());
-			return;
-		}
-		const payload = (await res.json()) as BoardFullResponse;
-		console.log('board-full payload', payload);
-		applyLoadedState(payload);
-	} catch (err) {
-		console.error('Erreur réseau /api/board-full', err);
+		nextLocalCardId = localId;
+		lists = mapped;
 	}
-}
+
+	async function loadBoardFull() {
+		if (!browser || !boardId) return;
+
+		try {
+			const res = await fetch(`/api/board-full?boardId=${boardId}`);
+			if (!res.ok) {
+				console.warn('Erreur /api/board-full', await res.text());
+				return;
+			}
+			const payload = (await res.json()) as BoardFullResponse;
+			console.log('board-full payload', payload);
+			applyLoadedState(payload);
+		} catch (err) {
+			console.error('Erreur réseau /api/board-full', err);
+		}
+	}
 
 	async function loadBoardFromRedis() {
 		if (!browser || !boardId) return;
@@ -108,12 +126,12 @@ async function loadBoardFull() {
 				return;
 			}
 
-			const payload = await res.json() as {
+			const payload = (await res.json()) as {
 				board: { uuid: string; name: string };
 				lists: Array<{
 					uuid: string;
 					name: string;
-					cards: Array<{ uuid: string; title: string; tags: string[] }>;
+					cards: Array<{ uuid: string; title: string; completed: boolean; tags: string[] }>;
 				}>;
 			};
 
@@ -128,6 +146,10 @@ async function loadBoardFull() {
 					id: localId++,
 					uuid: c.uuid,
 					title: c.title,
+					description: '',
+					dueDate: '',
+					assignees: [],
+					completed: c.completed ?? false,
 					tags: c.tags ?? []
 				}))
 			}));
@@ -142,6 +164,7 @@ async function loadBoardFull() {
 			return;
 		}
 
+		board_name = data.board?.name ?? board_name;
 		await loadBoardFull();
 		ready = true;
 	});
@@ -162,7 +185,7 @@ async function loadBoardFull() {
 				return;
 			}
 
-			const payload = await res.json() as { id: string; name: string };
+			const payload = (await res.json()) as { id: string; name: string };
 
 			lists = [
 				...lists,
@@ -198,49 +221,48 @@ async function loadBoardFull() {
 		}
 	}
 
-async function updateListName(index: number, event: Event) {
-	const target = event.currentTarget as HTMLInputElement;
-	if (!lists[index]) return;
+	async function updateListName(index: number, event: Event) {
+		const target = event.currentTarget as HTMLInputElement;
+		if (!lists[index]) return;
 
-	const newName = target.value;
-	lists[index].name = newName;
+		const newName = target.value;
+		lists[index].name = newName;
 
-	const listUuid = lists[index].uuid;
-	if (!browser || !listUuid) return;
+		const listUuid = lists[index].uuid;
+		if (!browser || !listUuid) return;
 
-	try {
-		await fetch('/api/lists', {
-			method: 'PATCH',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ listId: listUuid, name: newName.trim() })
-		});
-	} catch (err) {
-		console.error('Erreur rename list', err);
+		try {
+			await fetch('/api/lists', {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ listId: listUuid, name: newName.trim() })
+			});
+		} catch (err) {
+			console.error('Erreur rename list', err);
+		}
 	}
-}
 
-
-function updateListNewCardTitle(index: number, event: Event) {
-	const target = event.currentTarget as HTMLInputElement;
-	if (!lists[index]) return;
-	lists[index].newCardTitle = target.value;
-}
-async function persistBoardName() {
-	if (!browser || !boardId) return;
-
-	const name = board_name.trim();
-	if (!name) return;
-
-	try {
-		await fetch('/api/boards', {
-			method: 'PATCH',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ boardId, name })
-		});
-	} catch (err) {
-		console.error('Erreur rename board', err);
+	function updateListNewCardTitle(index: number, event: Event) {
+		const target = event.currentTarget as HTMLInputElement;
+		if (!lists[index]) return;
+		lists[index].newCardTitle = target.value;
 	}
-}
+	async function persistBoardName() {
+		if (!browser || !boardId) return;
+
+		const name = board_name.trim();
+		if (!name) return;
+
+		try {
+			await fetch('/api/boards', {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ boardId, name })
+			});
+		} catch (err) {
+			console.error('Erreur rename board', err);
+		}
+	}
 
 	async function addCard(listIndex: number) {
 		const list = lists[listIndex];
@@ -252,6 +274,10 @@ async function persistBoardName() {
 		const newCard: UiCard = {
 			id: localId,
 			title,
+			description: '',
+			dueDate: '',
+			assignees: [],
+			completed: false,
 			tags: [],
 			uuid: undefined
 		};
@@ -269,7 +295,7 @@ async function persistBoardName() {
 				return;
 			}
 
-			const payload = await res.json() as { id: string; title: string };
+			const payload = (await res.json()) as { id: string; title: string };
 			const card = list.cards.find((c) => c.id === localId);
 			if (card) {
 				card.uuid = payload.id;
@@ -279,299 +305,697 @@ async function persistBoardName() {
 		}
 	}
 
-async function handleDeleteCard(
-  event: CustomEvent<{ listIndex: number; cardIndex: number }>
-) {
-  const { listIndex, cardIndex } = event.detail;
+	async function handleDeleteCard(event: CustomEvent<{ listIndex: number; cardIndex: number }>) {
+		const { listIndex, cardIndex } = event.detail;
 
-  if (!Array.isArray(lists) || !lists[listIndex]) {
-    console.warn('handleDeleteCard: listIndex invalide', listIndex, lists);
-    return;
-  }
+		if (!Array.isArray(lists) || !lists[listIndex]) {
+			console.warn('handleDeleteCard: listIndex invalide', listIndex, lists);
+			return;
+		}
 
-  const list = lists[listIndex];
-  if (!Array.isArray(list.cards) || !list.cards[cardIndex]) {
-    console.warn('handleDeleteCard: cardIndex invalide', cardIndex, list.cards);
-    return;
-  }
+		const list = lists[listIndex];
+		if (!Array.isArray(list.cards) || !list.cards[cardIndex]) {
+			console.warn('handleDeleteCard: cardIndex invalide', cardIndex, list.cards);
+			return;
+		}
 
-  const card = list.cards[cardIndex];
-  const cardUuid = card.uuid;
+		const card = list.cards[cardIndex];
+		const cardUuid = card.uuid;
 
-  const newLists = lists.map((l, li) => {
-    if (li !== listIndex) return l;
+		if (selectedCardRef && selectedCardRef.listIndex === listIndex) {
+			if (selectedCardRef.cardIndex === cardIndex) {
+				closeDetails();
+			} else if (selectedCardRef.cardIndex > cardIndex) {
+				selectedCardRef = {
+					listIndex,
+					cardIndex: selectedCardRef.cardIndex - 1
+				};
+			}
+		}
 
-    return {
-      ...l,
-      cards: l.cards.filter((_, ci) => ci !== cardIndex)
-    };
-  });
+		const newLists = lists.map((l, li) => {
+			if (li !== listIndex) return l;
 
-  lists = newLists;
-  if (cardUuid) {
-    try {
-      const res = await fetch(`/api/cards?id=${cardUuid}`, {
-        method: 'DELETE'
-      });
+			return {
+				...l,
+				cards: l.cards.filter((_, ci) => ci !== cardIndex)
+			};
+		});
 
-      if (!res.ok) {
-        console.error('Erreur API delete card', await res.text());
-      }
-    } catch (err) {
-      console.error('Erreur réseau API delete card', err);
-    }
-  } else {
-    console.warn('handleDeleteCard: pas de uuid sur la carte, API non appelée');
-  }
-}
-	function handleOpenDetails(
-		event: CustomEvent<{ listIndex: number; cardIndex: number }>
-	) {
+		lists = newLists;
+		if (cardUuid) {
+			try {
+				const res = await fetch(`/api/cards?id=${cardUuid}`, {
+					method: 'DELETE'
+				});
+
+				if (!res.ok) {
+					console.error('Erreur API delete card', await res.text());
+				}
+			} catch (err) {
+				console.error('Erreur réseau API delete card', err);
+			}
+		} else {
+			console.warn('handleDeleteCard: pas de uuid sur la carte, API non appelée');
+		}
+	}
+	function handleOpenDetails(event: CustomEvent<{ listIndex: number; cardIndex: number }>) {
 		const { listIndex, cardIndex } = event.detail;
 		selectedCardRef = { listIndex, cardIndex };
+
+		const card = lists[listIndex]?.cards[cardIndex];
+		if (!card) return;
+
+		editorDescription = card.description ?? '';
+		editorDueDate = card.dueDate ?? '';
+		editorNewTag = '';
+		editorNewAssignee = '';
 	}
 
 	function closeDetails() {
 		selectedCardRef = null;
+		editorDescription = '';
+		editorDueDate = '';
+		editorNewTag = '';
+		editorNewAssignee = '';
 	}
 
-	async function handleUpdateTitle(
-	event: CustomEvent<{ listIndex: number; cardIndex: number; title: string }>
-) {
-	const { listIndex, cardIndex, title } = event.detail;
+	function getSelectedCardContext() {
+		if (!selectedCardRef) return null;
+		const { listIndex, cardIndex } = selectedCardRef;
+		const list = lists[listIndex];
+		const card = list?.cards[cardIndex];
 
-	const list = lists[listIndex];
-	if (!list || !list.cards[cardIndex]) return;
-
-	const card = list.cards[cardIndex];
-	card.title = title;
-
-	const cardUuid = card.uuid;
-	if (!browser || !cardUuid) return;
-
-	try {
-		await fetch('/api/cards', {
-			method: 'PATCH',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ cardId: cardUuid, name: title.trim() })
-		});
-	} catch (err) {
-		console.error('Erreur rename card', err);
-	}
-}
-
-	async function handleMoveCard(
-	event: CustomEvent<{ listIndex: number; cardIndex: number; direction: number }>
-) {
-	const { listIndex, cardIndex, direction } = event.detail;
-
-	const fromList = lists[listIndex];
-	if (!fromList || !fromList.cards[cardIndex]) {
-		console.warn('handleMoveCard: index invalide', event.detail, lists);
-		return;
+		if (!list || !card) return null;
+		return { listIndex, cardIndex, list, card };
 	}
 
-	const newListIndex = listIndex + direction;
-	const toList = lists[newListIndex];
-	if (!toList) {
-		console.warn('handleMoveCard: nouvelle liste inexistante', newListIndex, lists);
-		return;
-	}
-
-	const [card] = fromList.cards.splice(cardIndex, 1);
-	toList.cards.push(card);
-
-	const cardUuid = card.uuid;
-	const fromUuid = fromList.uuid;
-	const toUuid = toList.uuid;
-
-	if (browser && cardUuid && fromUuid && toUuid && fromUuid !== toUuid) {
+	async function persistCardFields(cardUuid: string | undefined, fields: Record<string, unknown>) {
+		if (!browser || !cardUuid) return;
 		try {
 			await fetch('/api/cards', {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					cardId: cardUuid,
-					fromListId: fromUuid,
-					toListId: toUuid
+					...fields
+				})
+			});
+		} catch (err) {
+			console.error('Erreur update card fields', err);
+		}
+	}
+
+	async function handleUpdateCompleted(
+		event: CustomEvent<{ listIndex: number; cardIndex: number; completed: boolean }>
+	) {
+		const { listIndex, cardIndex, completed } = event.detail;
+		const list = lists[listIndex];
+		if (!list || !list.cards[cardIndex]) return;
+
+		const card = list.cards[cardIndex];
+		card.completed = completed;
+		await persistCardFields(card.uuid, { completed });
+	}
+
+	function moveCardInMemory(
+		fromListIndex: number,
+		fromCardIndex: number,
+		toListIndex: number,
+		toCardIndex: number
+	) {
+		const fromList = lists[fromListIndex];
+		const toList = lists[toListIndex];
+		if (!fromList || !toList || !fromList.cards[fromCardIndex]) {
+			return null;
+		}
+
+		const [card] = fromList.cards.splice(fromCardIndex, 1);
+
+		let insertIndex = toCardIndex;
+		if (fromListIndex === toListIndex && fromCardIndex < insertIndex) {
+			insertIndex -= 1;
+		}
+		insertIndex = Math.max(0, Math.min(insertIndex, toList.cards.length));
+		toList.cards.splice(insertIndex, 0, card);
+
+		return {
+			card,
+			insertIndex,
+			fromListUuid: fromList.uuid,
+			toListUuid: toList.uuid,
+			unchanged: fromListIndex === toListIndex && insertIndex === fromCardIndex
+		};
+	}
+
+	async function persistCardMove(
+		cardUuid: string | undefined,
+		fromListUuid: string | undefined,
+		toListUuid: string | undefined,
+		targetIndex: number
+	) {
+		if (!browser || !cardUuid || !fromListUuid || !toListUuid) return;
+
+		try {
+			await fetch('/api/cards', {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					cardId: cardUuid,
+					fromListId: fromListUuid,
+					toListId: toListUuid,
+					targetIndex
 				})
 			});
 		} catch (err) {
 			console.error('Erreur move card', err);
 		}
 	}
-}
-async function addTagToCard(listIndex: number, cardIndex: number, tag: string) {
-  const list = lists[listIndex];
-  if (!list || !list.cards[cardIndex]) return;
 
-  const card = list.cards[cardIndex];
-  const cleanTag = tag.trim();
-  if (!cleanTag) return;
+	function moveListInMemory(fromIndex: number, toIndex: number) {
+		if (!lists[fromIndex]) {
+			return null;
+		}
 
-  if (card.tags.includes(cleanTag)) return;
+		const nextLists = [...lists];
+		const [movedList] = nextLists.splice(fromIndex, 1);
+		let insertIndex = toIndex;
 
-  card.tags.push(cleanTag);
+		if (fromIndex < insertIndex) {
+			insertIndex -= 1;
+		}
+		insertIndex = Math.max(0, Math.min(insertIndex, nextLists.length));
+		nextLists.splice(insertIndex, 0, movedList);
 
-  if (!card.uuid || !browser) return;
+		const changed = insertIndex !== fromIndex;
+		lists = nextLists;
 
-  try {
-    const res = await fetch('/api/tags', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cardId: card.uuid, name: cleanTag })
-    });
+		return { changed };
+	}
 
-    if (!res.ok) {
-      console.error('Erreur API add tag', await res.text());
-    }
-  } catch (err) {
-    console.error('Erreur réseau add tag', err);
-  }
-}
+	async function persistListsOrder() {
+		if (!browser) return;
 
-function handleAddTag(
-  event: CustomEvent<{ listIndex: number; cardIndex: number; tag: string }>
-) {
-  const { listIndex, cardIndex, tag } = event.detail;
-  void addTagToCard(listIndex, cardIndex, tag);
-}
-async function removeTagFromCard(cardId: number, tag: string) {
-  let cardUuid: string | undefined;
+		const updates = lists
+			.map((list, order) => (list.uuid ? { listId: list.uuid, order } : null))
+			.filter((entry): entry is { listId: string; order: number } => entry !== null);
 
-  const updatedLists = lists.map((list) => {
-    const cards = list.cards.map((card) => {
-      if (card.id === cardId) {
-        cardUuid = card.uuid;
-        return {
-          ...card,
-          tags: (card.tags ?? []).filter((t) => t !== tag)
-        };
-      }
-      return card;
-    });
-    return { ...list, cards };
-  });
+		await Promise.all(
+			updates.map(async ({ listId, order }) => {
+				try {
+					const res = await fetch('/api/lists', {
+						method: 'PATCH',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({ listId, order })
+					});
+					if (!res.ok) {
+						console.error('Erreur persist list order', listId, order, await res.text());
+					}
+				} catch (err) {
+					console.error('Erreur persist list order', err);
+				}
+			})
+		);
+	}
 
-  lists = updatedLists;
+	function setCardDropPreview(targetListIndex: number, targetCardIndex: number) {
+		if (!draggedCardRef) return;
+		cardDropPreview = {
+			listIndex: targetListIndex,
+			targetIndex: targetCardIndex
+		};
+	}
 
-  if (!cardUuid || !browser) return;
+	function handleDragStart(event: CustomEvent<{ listIndex: number; cardIndex: number }>) {
+		draggedCardRef = event.detail;
+		cardDropPreview = null;
+		listDropPreviewIndex = null;
+	}
 
-  try {
-    const res = await fetch('/api/tags', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cardId: cardUuid, name: tag })
-    });
+	function handleDragEnd() {
+		draggedCardRef = null;
+		cardDropPreview = null;
+	}
 
-    if (!res.ok) {
-      console.error('Erreur API delete tag', await res.text());
-    }
-  } catch (err) {
-    console.error('Erreur réseau API delete tag', err);
-  }
-}
+	function handleListDragStart(index: number, event: DragEvent) {
+		const target = event.target as HTMLElement | null;
+		if (
+			target?.closest(
+				'input, button, textarea, select, a, [contenteditable="true"], li[draggable="true"]'
+			)
+		) {
+			event.preventDefault();
+			return;
+		}
 
-function handleRemoveTag(e: CustomEvent<{ cardId: number; tag: string }>) {
-  const { cardId, tag } = e.detail;
-  void removeTagFromCard(cardId, tag);
-}
-async function panelAddTag() {
-  if (!selectedCardRef) return;
+		draggedListIndex = index;
+		cardDropPreview = null;
+		listDropPreviewIndex = null;
+		if (event.dataTransfer) {
+			event.dataTransfer.effectAllowed = 'move';
+			event.dataTransfer.setData('text/plain', `list:${index}`);
+		}
+	}
 
-  const tag = panelTagInput.trim();
-  if (!tag) return;
+	function handleListDragEnd() {
+		draggedListIndex = null;
+		listDropPreviewIndex = null;
+	}
 
-  await addTagToCard(selectedCardRef.listIndex, selectedCardRef.cardIndex, tag);
-  panelTagInput = '';
-}
+	function setListDropPreview(targetInsertIndex: number) {
+		if (draggedListIndex === null) return;
+		const previewIndex = Math.max(0, Math.min(targetInsertIndex, lists.length));
+		const isNoOpPosition =
+			previewIndex === draggedListIndex || previewIndex === draggedListIndex + 1;
+		listDropPreviewIndex = isNoOpPosition ? null : previewIndex;
+	}
 
-async function panelRemoveTag(tag: string) {
-  if (!selectedCard) return;
+	function handleListDragOver(targetIndex: number, event: DragEvent) {
+		if (draggedListIndex === null) return;
+		event.preventDefault();
 
-  await removeTagFromCard(selectedCard.id, tag);
-}
+		const targetElement = event.currentTarget as HTMLElement | null;
+		const rect = targetElement?.getBoundingClientRect();
+		const dropAfter = rect ? event.clientX > rect.left + rect.width / 2 : false;
+		const targetInsertIndex = dropAfter ? targetIndex + 1 : targetIndex;
+		setListDropPreview(targetInsertIndex);
+	}
 
+	async function handleListDrop(targetIndex: number, event: DragEvent) {
+		if (draggedListIndex === null) return;
+		event.preventDefault();
+
+		const targetElement = event.currentTarget as HTMLElement | null;
+		const rect = targetElement?.getBoundingClientRect();
+		const dropAfter = rect ? event.clientX > rect.left + rect.width / 2 : false;
+		const targetInsertIndex = dropAfter ? targetIndex + 1 : targetIndex;
+
+		const moved = moveListInMemory(draggedListIndex, targetInsertIndex);
+		draggedListIndex = null;
+		listDropPreviewIndex = null;
+		if (!moved || !moved.changed) return;
+
+		selectedCardRef = null;
+		await persistListsOrder();
+	}
+
+	function handleListPreviewDragOver(insertIndex: number, event: DragEvent) {
+		if (draggedListIndex === null) return;
+		event.preventDefault();
+		setListDropPreview(insertIndex);
+	}
+
+	async function handleListPreviewDrop(insertIndex: number, event: DragEvent) {
+		if (draggedListIndex === null) return;
+		event.preventDefault();
+
+		const moved = moveListInMemory(draggedListIndex, insertIndex);
+		draggedListIndex = null;
+		listDropPreviewIndex = null;
+		if (!moved || !moved.changed) return;
+
+		selectedCardRef = null;
+		await persistListsOrder();
+	}
+
+	function handleCardDragOver(
+		event: CustomEvent<{ listIndex: number; cardIndex: number; dropAfter: boolean }>
+	) {
+		if (!draggedCardRef) return;
+		const { listIndex, cardIndex, dropAfter } = event.detail;
+		const targetIndex = cardIndex + (dropAfter ? 1 : 0);
+		setCardDropPreview(listIndex, targetIndex);
+	}
+
+	function getCardInsertIndexFromPointer(listIndex: number, event: DragEvent) {
+		const list = lists[listIndex];
+		const currentTarget = event.currentTarget as HTMLElement | null;
+		if (!list || !currentTarget) return 0;
+
+		const cardElements = Array.from(
+			currentTarget.querySelectorAll<HTMLElement>('[data-card-item="true"]')
+		);
+		if (!cardElements.length) return 0;
+
+		for (let i = 0; i < cardElements.length; i += 1) {
+			const rect = cardElements[i].getBoundingClientRect();
+			const shouldInsertBefore = event.clientY < rect.top + rect.height / 2;
+			if (shouldInsertBefore) {
+				return i;
+			}
+		}
+
+		return cardElements.length;
+	}
+
+	function handleCardListDragOver(listIndex: number, event: DragEvent) {
+		if (!draggedCardRef || !lists[listIndex]) return;
+		event.preventDefault();
+		const targetIndex = getCardInsertIndexFromPointer(listIndex, event);
+		setCardDropPreview(listIndex, targetIndex);
+	}
+
+	async function handleDropOnCard(
+		event: CustomEvent<{ listIndex: number; cardIndex: number; dropAfter: boolean }>
+	) {
+		if (!draggedCardRef) return;
+		const { listIndex, cardIndex, dropAfter } = event.detail;
+		const targetIndex = cardIndex + (dropAfter ? 1 : 0);
+
+		const moved = moveCardInMemory(
+			draggedCardRef.listIndex,
+			draggedCardRef.cardIndex,
+			listIndex,
+			targetIndex
+		);
+
+		draggedCardRef = null;
+		cardDropPreview = null;
+		if (!moved || moved.unchanged) return;
+
+		await persistCardMove(moved.card.uuid, moved.fromListUuid, moved.toListUuid, moved.insertIndex);
+	}
+
+	async function handleDropOnList(listIndex: number, event: DragEvent) {
+		if (!draggedCardRef || !lists[listIndex]) return;
+		event.preventDefault();
+		const targetIndex = getCardInsertIndexFromPointer(listIndex, event);
+
+		const moved = moveCardInMemory(
+			draggedCardRef.listIndex,
+			draggedCardRef.cardIndex,
+			listIndex,
+			targetIndex
+		);
+
+		draggedCardRef = null;
+		cardDropPreview = null;
+		if (!moved || moved.unchanged) return;
+
+		await persistCardMove(moved.card.uuid, moved.fromListUuid, moved.toListUuid, moved.insertIndex);
+	}
+
+	function handleEditorTitleInput(event: Event) {
+		const context = getSelectedCardContext();
+		if (!context) return;
+
+		const target = event.currentTarget as HTMLInputElement;
+		context.card.title = target.value;
+	}
+
+	async function handleEditorTitleBlur() {
+		const context = getSelectedCardContext();
+		if (!context) return;
+
+		const normalizedTitle = context.card.title.trim();
+		if (!normalizedTitle) return;
+
+		context.card.title = normalizedTitle;
+		await persistCardFields(context.card.uuid, { name: normalizedTitle });
+	}
+
+	function handleEditorDescriptionInput(event: Event) {
+		const context = getSelectedCardContext();
+		if (!context) return;
+
+		const target = event.currentTarget as HTMLTextAreaElement;
+		editorDescription = target.value;
+		context.card.description = target.value;
+	}
+
+	async function handleEditorDescriptionBlur() {
+		const context = getSelectedCardContext();
+		if (!context) return;
+
+		await persistCardFields(context.card.uuid, { description: editorDescription });
+	}
+
+	function handleEditorDueDateInput(event: Event) {
+		const target = event.currentTarget as HTMLInputElement;
+		editorDueDate = target.value;
+	}
+
+	async function saveEditorDueDate() {
+		const context = getSelectedCardContext();
+		if (!context) return;
+
+		context.card.dueDate = editorDueDate;
+		await persistCardFields(context.card.uuid, { dueDate: editorDueDate });
+	}
+
+	async function clearEditorDueDate() {
+		const context = getSelectedCardContext();
+		if (!context) return;
+
+		editorDueDate = '';
+		context.card.dueDate = '';
+		await persistCardFields(context.card.uuid, { dueDate: '' });
+	}
+
+	async function addEditorAssignee() {
+		const assignee = editorNewAssignee.trim();
+		if (!assignee) return;
+
+		const context = getSelectedCardContext();
+		if (!context) return;
+
+		if (
+			context.card.assignees.some(
+				(existingAssignee) => existingAssignee.toLowerCase() === assignee.toLowerCase()
+			)
+		) {
+			editorNewAssignee = '';
+			return;
+		}
+
+		context.card.assignees = [...context.card.assignees, assignee];
+		editorNewAssignee = '';
+		await persistCardFields(context.card.uuid, { assignees: context.card.assignees });
+	}
+
+	async function removeEditorAssignee(assignee: string) {
+		const context = getSelectedCardContext();
+		if (!context) return;
+
+		context.card.assignees = context.card.assignees.filter((entry) => entry !== assignee);
+		await persistCardFields(context.card.uuid, { assignees: context.card.assignees });
+	}
+
+	async function addEditorTag() {
+		const tag = editorNewTag.trim();
+		if (!tag) return;
+
+		const context = getSelectedCardContext();
+		if (!context || !context.card.uuid) return;
+
+		if (context.card.tags.some((existingTag) => existingTag.toLowerCase() === tag.toLowerCase())) {
+			editorNewTag = '';
+			return;
+		}
+
+		context.card.tags = [...context.card.tags, tag];
+		editorNewTag = '';
+
+		try {
+			const res = await fetch('/api/tags', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ cardId: context.card.uuid, name: tag })
+			});
+
+			if (!res.ok) {
+				context.card.tags = context.card.tags.filter((existingTag) => existingTag !== tag);
+				console.error('Erreur API add tag', await res.text());
+			}
+		} catch (err) {
+			context.card.tags = context.card.tags.filter((existingTag) => existingTag !== tag);
+			console.error('Erreur réseau add tag', err);
+		}
+	}
+
+	async function removeEditorTag(tag: string) {
+		const context = getSelectedCardContext();
+		if (!context || !context.card.uuid) return;
+
+		context.card.tags = context.card.tags.filter((entry) => entry !== tag);
+
+		try {
+			const res = await fetch('/api/tags', {
+				method: 'DELETE',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ cardId: context.card.uuid, name: tag })
+			});
+
+			if (!res.ok) {
+				console.error('Erreur API delete tag', await res.text());
+			}
+		} catch (err) {
+			console.error('Erreur réseau API delete tag', err);
+		}
+	}
 </script>
 
 {#if ready}
 	<UserSearchBar />
-	<div class="min-h-[calc(100vh-4rem)] w-screen bg-gray-600 p-4">
-		<div class="mb-4 flex items-center gap-4 rounded bg-gray-100 p-4 shadow-md">
+	<div
+		class="min-h-[calc(100vh-4rem)] w-screen bg-gradient-to-br from-slate-900 via-slate-800 to-sky-900 p-3"
+	>
+		<div
+			class="mb-3 flex items-center gap-3 rounded-xl border border-sky-300/30 bg-slate-800/70 p-3 shadow-md shadow-slate-950/50 backdrop-blur-sm"
+		>
 			<input
-				class="text-gray-800 rounded-md border-0 bg-transparent text-3xl font-bold hover:bg-gray-200 focus:outline-0 transition-colors"
+				class="rounded-md border-0 bg-transparent px-2 py-1 text-2xl font-bold text-slate-100 transition-colors hover:bg-slate-700/60 focus:outline-0"
 				title="Board Name"
 				type="text"
 				bind:value={board_name}
 				placeholder="Board name..."
-				on:blur={persistBoardName}
+				onblur={persistBoardName}
 			/>
 		</div>
 
-		<div class="flex gap-4 overflow-x-auto p-4">
+		<div class="flex gap-3 overflow-x-auto px-2 py-3">
 			{#each lists as list, i}
-				<div class="min-w-[250px] rounded-md bg-gray-100 p-4 text-gray-800 shadow-md">
-					<div class="flex flex-row items-center justify-center gap-2 min-w-full">
+				{#if listDropPreviewIndex === i}
+					<div
+						class={`min-w-[220px] self-stretch rounded-xl border-2 border-dashed border-sky-300/70 bg-sky-400/20 ${draggedListIndex === null ? 'pointer-events-none' : ''}`}
+						role="group"
+						aria-label="List drop preview"
+						ondragover={(event) => handleListPreviewDragOver(i, event)}
+						ondrop={(event) => void handleListPreviewDrop(i, event)}
+					></div>
+				{/if}
+				<div
+					class="group/list relative flex min-w-[220px] flex-col rounded-xl border border-sky-300/20 bg-slate-800/70 p-3 text-slate-100 shadow-md shadow-slate-950/50 backdrop-blur-sm"
+					role="group"
+					draggable="true"
+					ondragstart={(event) => handleListDragStart(i, event)}
+					ondragend={handleListDragEnd}
+					ondragover={(event) => handleListDragOver(i, event)}
+					ondrop={(event) => handleListDrop(i, event)}
+				>
+					<div class="flex min-w-full flex-row items-center gap-2">
 						<input
-							class="w-full rounded-md border-0 bg-gray-100 hover:bg-gray-200 font-mono text-xl font-bold transition-all"
+							class="w-full flex-1 rounded-md border-0 bg-transparent px-1 py-1 font-mono text-lg font-bold text-slate-100 transition-colors hover:bg-slate-700/50"
 							value={list.name}
-							on:input={(e) => updateListName(i, e)}
+							oninput={(e) => updateListName(i, e)}
 						/>
-						<button
-							type="button"
-							class="w-20 pb-1 hover:text-red-500 hover:cursor-pointer transition-all text-2xl font-bold font-mono"
-							on:click={() => deleteList(i)}
-						>
-							[X]
-						</button>
+						<div class="group/list-corner relative h-8 w-8 shrink-0">
+							<button
+								type="button"
+								title="Delete list"
+								class="pointer-events-none absolute right-0 top-0 h-8 w-8 cursor-pointer rounded-full border border-rose-300/20 bg-slate-800/90 text-center text-sm font-bold text-rose-200 opacity-0 shadow-sm shadow-black/30 transition-all group-hover/list-corner:pointer-events-auto group-hover/list-corner:opacity-100 hover:border-rose-300/60 hover:bg-rose-500/20 hover:text-rose-100"
+								onclick={() => deleteList(i)}
+							>
+								✕
+							</button>
+						</div>
 					</div>
 
-					<ol class="mt-4 flex flex-col gap-2 bg-gray-100">
+					<ol
+						class="mt-3 flex min-h-0 flex-1 flex-col gap-1.5"
+						ondragover={(event) => {
+							if (draggedListIndex !== null) {
+								handleListDragOver(i, event);
+								return;
+							}
+							handleCardListDragOver(i, event);
+						}}
+						ondrop={(event) => {
+							if (draggedListIndex !== null) {
+								void handleListDrop(i, event);
+								return;
+							}
+							void handleDropOnList(i, event);
+						}}
+					>
 						{#each list.cards as card, j}
+							{#if cardDropPreview && cardDropPreview.listIndex === i && cardDropPreview.targetIndex === j}
+								<li
+									class="pointer-events-none h-14 rounded-lg border-2 border-dashed border-sky-300/70 bg-sky-400/20"
+								></li>
+							{/if}
 							<Card
 								{card}
 								listIndex={i}
 								cardIndex={j}
-								on:updateTitle={handleUpdateTitle}
-								on:moveCard={handleMoveCard}
+								on:updateCompleted={handleUpdateCompleted}
 								on:deleteCard={handleDeleteCard}
-								on:openDetails={handleOpenDetails} 
+								on:openDetails={handleOpenDetails}
+								on:dragStart={handleDragStart}
+								on:dragEnd={handleDragEnd}
+								on:dragOverCard={handleCardDragOver}
+								on:dropOnCard={handleDropOnCard}
 							/>
 						{/each}
+						{#if cardDropPreview && cardDropPreview.listIndex === i && cardDropPreview.targetIndex === list.cards.length}
+							<li
+								class="pointer-events-none h-14 rounded-lg border-2 border-dashed border-sky-300/70 bg-sky-400/20"
+							></li>
+						{/if}
 					</ol>
 
 					<form
-						class="mt-3 flex gap-2"
-						on:submit|preventDefault={() => addCard(i)}
+						class="mt-2.5 flex gap-1.5"
+						ondragover={(event) => {
+							if (draggedListIndex !== null) {
+								handleListDragOver(i, event);
+							}
+						}}
+						ondrop={(event) => {
+							if (draggedListIndex !== null) {
+								void handleListDrop(i, event);
+							}
+						}}
+						onsubmit={(event) => {
+							event.preventDefault();
+							addCard(i);
+						}}
 					>
 						<input
 							type="text"
-							class="w-full rounded-md border-0 bg-sky-700 p-2 font-mono shadow-md shadow-gray-300 placeholder:text-gray-300 text-gray-100"
+							class="w-full rounded-md border border-slate-600/60 bg-slate-700/80 p-1.5 font-mono text-sm text-slate-100 shadow-sm shadow-black/20 placeholder:text-slate-300"
 							placeholder="New card title..."
 							value={list.newCardTitle}
-							on:input={(e) => updateListNewCardTitle(i, e)}
+							oninput={(e) => updateListNewCardTitle(i, e)}
 						/>
 						<button
 							type="submit"
-							class="w-24 rounded-md bg-sky-500 px-3 text-white shadow-md shadow-gray-300 hover:bg-sky-400 hover:cursor-pointer transition-all"
+							class="w-20 cursor-pointer rounded-md bg-sky-600 px-2 text-sm font-semibold text-white shadow-sm shadow-sky-900/50 transition-colors hover:bg-sky-500"
 						>
 							+ Add
 						</button>
 					</form>
 				</div>
 			{/each}
+			{#if listDropPreviewIndex === lists.length}
+				<div
+					class={`min-w-[220px] self-stretch rounded-xl border-2 border-dashed border-sky-300/70 bg-sky-400/20 ${draggedListIndex === null ? 'pointer-events-none' : ''}`}
+					role="group"
+					aria-label="List drop preview"
+					ondragover={(event) => handleListPreviewDragOver(lists.length, event)}
+					ondrop={(event) => void handleListPreviewDrop(lists.length, event)}
+				></div>
+			{/if}
 
-			<div class="min-w-[250px] rounded-md bg-gray-100 p-4 text-white shadow-md">
-				<form on:submit|preventDefault={addList} class="flex flex-col gap-2">
+			<div
+				class="min-w-[220px] rounded-xl border border-dashed border-sky-300/35 bg-slate-800/55 p-3 text-slate-100 shadow-md shadow-slate-950/40 backdrop-blur-sm"
+			>
+				<form
+					onsubmit={(event) => {
+						event.preventDefault();
+						addList();
+					}}
+					class="flex flex-col gap-2"
+				>
 					<input
 						type="text"
-						class="w-full rounded-md border-0 bg-sky-700 p-2 font-mono shadow shadow-gray-300 placeholder:text-gray-300"
+						class="w-full rounded-md border border-slate-600/60 bg-slate-700/80 p-1.5 font-mono text-sm text-slate-100 shadow-sm shadow-black/20 placeholder:text-slate-300 h-9"
 						placeholder="New list name..."
 						bind:value={newListName}
 					/>
 					<button
 						type="submit"
-						class="w-full rounded-md bg-sky-500 px-4 py-2 shadow shadow-gray-300 hover:bg-sky-400 hover:cursor-pointer transition-all"
+						class="h-9 hover:cursor-pointer w-full rounded-md bg-sky-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm shadow-sky-900/50 transition-colors hover:bg-sky-500"
 					>
 						+ Add List
 					</button>
@@ -579,79 +1003,192 @@ async function panelRemoveTag(tag: string) {
 			</div>
 		</div>
 	</div>
-		{#if selectedCard && selectedList}
-		<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-			<div class="relative w-full max-w-3xl rounded-lg bg-gray-900 text-gray-100 p-6 shadow-xl">
-				<button
-					type="button"
-					class="absolute right-4 top-4 text-gray-400 hover:text-white"
-					on:click={closeDetails}
-				>
-					✕
-				</button>
-
-				<h2 class="mb-1 text-xl font-bold">{selectedCard.title}</h2>
-				<p class="mb-4 text-sm text-gray-400">
-					in list <span class="font-semibold text-gray-200">{selectedList.name}</span>
-				</p>
-				<section class="mb-4">
-					<h3 class="mb-1 text-sm font-semibold uppercase tracking-wide text-gray-400">
-						Description
-					</h3>
-					<p class="rounded-md bg-gray-800 px-3 py-2 text-sm text-gray-300">
-						(Description à venir)
-					</p>
-				</section>
-				<div>
-					<h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
-						Tags
-					</h3>
-
-					{#if selectedCard.tags && selectedCard.tags.length}
-						<div class="mb-2 flex flex-wrap gap-1">
-						{#each selectedCard.tags as tag}
-							<span
-							class="inline-flex items-center gap-1 rounded bg-sky-500 px-2 py-0.5 text-xs text-white"
-							>
-							<span>{tag}</span>
-							<button
-								type="button"
-								class="rounded bg-sky-700 px-1 text-[10px] hover:bg-red-500 hover:cursor-pointer"
-								on:click={() => panelRemoveTag(tag)}
-								title="Remove tag"
-							>
-								✕
-							</button>
-							</span>
-						{/each}
-						</div>
-					{:else}
-						<p class="mb-2 text-xs text-gray-500 italic">
-						Aucun tag pour cette carte.
-						</p>
-					{/if}
-
-					<form class="mt-2 flex gap-2" on:submit|preventDefault={panelAddTag}>
-						<input
+	{#if selectedCard && selectedList}
+		<div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4">
+			<div
+				class="relative w-full max-w-3xl rounded-xl border border-sky-300/30 bg-slate-900/95 p-5 text-slate-100 shadow-xl shadow-slate-950/70 backdrop-blur-sm"
+			>
+				<div class="mb-1 flex items-start gap-2">
+					<input
 						type="text"
-						class="flex-1 rounded border border-gray-700 bg-gray-800 p-1 text-xs text-gray-100 placeholder:text-gray-400"
-						placeholder="Ajouter un tag..."
-						bind:value={panelTagInput}
-						/>
-						<button
-						type="submit"
-						class="rounded bg-sky-600 px-2 py-1 text-xs text-white hover:bg-sky-500"
+						class="min-w-0 flex-1 rounded-md border border-slate-600 bg-slate-800/80 px-2 py-1 text-lg font-bold text-slate-100 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none"
+						value={selectedCard.title}
+						oninput={handleEditorTitleInput}
+						onblur={handleEditorTitleBlur}
+					/>
+					<button
+						type="button"
+						class="ml-2 mt-0.5 h-8 w-8 shrink-0 cursor-pointer rounded-full border border-slate-500/70 bg-slate-800/90 text-slate-300 shadow-md shadow-slate-950/70 transition-all hover:border-sky-300/70 hover:bg-sky-500/20 hover:text-slate-100"
+						onclick={closeDetails}
+					>
+						✕
+					</button>
+				</div>
+				<p class="mb-4 text-xs text-slate-300">
+					in list <span class="font-semibold text-sky-200">{selectedList.name}</span>
+				</p>
+
+				<div class="grid gap-4 md:grid-cols-2">
+					<section class="md:col-span-2">
+						<h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-sky-200">
+							Description
+						</h3>
+						<textarea
+							class="min-h-28 w-full rounded-md border border-slate-600 bg-slate-800/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none"
+							placeholder="Write a description..."
+							value={editorDescription}
+							oninput={handleEditorDescriptionInput}
+							onblur={handleEditorDescriptionBlur}
+						></textarea>
+					</section>
+
+					<section class="min-w-0">
+						<h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-sky-200">
+							Assignées
+						</h3>
+						<div class="mb-2 flex flex-wrap gap-1.5">
+							{#if selectedCard.assignees?.length}
+								{#each selectedCard.assignees as assignee}
+									<span
+										class="inline-flex items-center gap-1 rounded-md bg-slate-700/90 px-2 py-1 text-xs text-slate-100 ring-1 ring-slate-500"
+									>
+										{assignee}
+										<button
+											type="button"
+											class="cursor-pointer rounded px-1 text-slate-300 shadow-sm shadow-slate-950/60 transition-all hover:bg-rose-500/25 hover:text-rose-200 active:translate-y-px"
+											onclick={() => removeEditorAssignee(assignee)}
+											title="Remove assignee"
+										>
+											✕
+										</button>
+									</span>
+								{/each}
+							{:else}
+								<p class="text-xs text-slate-400">No assignees yet.</p>
+							{/if}
+						</div>
+						<form
+							class="flex w-full gap-1.5"
+							onsubmit={(event) => {
+								event.preventDefault();
+								addEditorAssignee();
+							}}
 						>
-						+ Tag
-						</button>
-					</form>
+							<input
+								type="text"
+								class="min-w-0 flex-1 rounded-md border border-slate-600 bg-slate-800/80 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none"
+								placeholder="Add assignee..."
+								bind:value={editorNewAssignee}
+							/>
+							<button
+								type="submit"
+								class="h-8 w-16 min-w-[4rem] shrink-0 cursor-pointer whitespace-nowrap rounded-md bg-sky-600 px-2 py-1 text-center text-xs font-semibold text-white shadow-md shadow-sky-900/50 transition-all hover:bg-sky-500 active:translate-y-px"
+							>
+								+ Add
+							</button>
+						</form>
+					</section>
+
+					<section>
+						<h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-sky-200">
+							Due Date
+						</h3>
+						<div class="mb-2 flex flex-wrap gap-1.5">
+							{#if selectedCard.dueDate}
+								<span
+									class="inline-flex items-center gap-1 rounded-md bg-slate-700/90 px-2 py-1 text-xs text-slate-100 ring-1 ring-slate-500"
+								>
+									{selectedCard.dueDate}
+									<button
+										type="button"
+										class="cursor-pointer rounded px-1 text-slate-300 shadow-sm shadow-slate-950/60 transition-all hover:bg-rose-500/25 hover:text-rose-200 active:translate-y-px"
+										onclick={clearEditorDueDate}
+										title="Clear due date"
+									>
+										✕
+									</button>
+								</span>
+							{:else}
+								<p class="text-xs text-slate-400">No due date.</p>
+							{/if}
+						</div>
+						<form
+							class="flex w-full gap-1.5"
+							onsubmit={(event) => {
+								event.preventDefault();
+								saveEditorDueDate();
+							}}
+						>
+							<input
+								type="date"
+								class="min-w-0 flex-1 appearance-none rounded-md border border-slate-600 bg-slate-800/80 px-2 py-1 text-sm text-slate-100 focus:border-sky-400 focus:outline-none [color-scheme:dark] [&::-webkit-calendar-picker-indicator]:m-0 [&::-webkit-calendar-picker-indicator]:h-0 [&::-webkit-calendar-picker-indicator]:w-0 [&::-webkit-calendar-picker-indicator]:opacity-0"
+								value={editorDueDate}
+								oninput={handleEditorDueDateInput}
+							/>
+							<button
+								type="submit"
+								class="h-8 w-16 min-w-[4rem] shrink-0 cursor-pointer whitespace-nowrap rounded-md bg-sky-600 px-2 py-1 text-center text-xs font-semibold text-white shadow-md shadow-sky-900/50 transition-all hover:bg-sky-500 active:translate-y-px"
+							>
+								Set
+							</button>
+						</form>
+					</section>
+
+					<section class="md:col-span-2">
+						<h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-sky-200">Tags</h3>
+						<div class="mb-2 flex flex-wrap gap-1.5">
+							{#if selectedCard.tags?.length}
+								{#each selectedCard.tags as tag}
+									<span
+										class="inline-flex items-center gap-1 rounded-md bg-sky-500/20 px-2 py-1 text-xs text-sky-100 ring-1 ring-sky-300/30"
+									>
+										{tag}
+										<button
+											type="button"
+											class="cursor-pointer rounded px-1 text-sky-200 shadow-sm shadow-slate-950/60 transition-all hover:bg-rose-500/25 hover:text-rose-200 active:translate-y-px"
+											onclick={() => removeEditorTag(tag)}
+											title="Remove tag"
+										>
+											✕
+										</button>
+									</span>
+								{/each}
+							{:else}
+								<p class="text-xs text-slate-400">No tags yet.</p>
+							{/if}
+						</div>
+						<form
+							class="flex gap-1.5"
+							onsubmit={(event) => {
+								event.preventDefault();
+								addEditorTag();
+							}}
+						>
+							<input
+								type="text"
+								class="w-full rounded-md border border-slate-600 bg-slate-800/80 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none"
+								placeholder="Add tag..."
+								bind:value={editorNewTag}
+							/>
+							<button
+								type="submit"
+								class="h-8 w-16 min-w-[4rem] shrink-0 cursor-pointer whitespace-nowrap rounded-md bg-sky-600 px-2 py-1 text-center text-xs font-semibold text-white shadow-md shadow-sky-900/50 transition-all hover:bg-sky-500 active:translate-y-px"
+							>
+								+ Add
+							</button>
+						</form>
+					</section>
 				</div>
 			</div>
 		</div>
 	{/if}
 {:else}
-	<div class="flex min-h-[calc(100vh-4rem)] w-screen items-center justify-center bg-gray-600">
-		<p class="rounded bg-gray-800 px-4 py-2 text-sm text-gray-200">
+	<div
+		class="flex min-h-[calc(100vh-4rem)] w-screen items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-sky-900"
+	>
+		<p
+			class="rounded-md border border-sky-300/30 bg-slate-900/85 px-3 py-1.5 text-sm text-slate-100 shadow-sm shadow-slate-950/60"
+		>
 			Chargement du board...
 		</p>
 	</div>

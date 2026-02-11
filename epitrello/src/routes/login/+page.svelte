@@ -103,81 +103,90 @@
 <TopBar login={true} />
 
 {#if checking}
-	<div class="flex h-[calc(100vh-4rem)] items-center justify-center bg-gray-100 p-8 select-none">
-		<p class="text-gray-500">Vérification de la session...</p>
+	<div class="flex h-[calc(100vh-4rem)] select-none items-center justify-center bg-transparent p-8">
+		<p class="text-slate-300">Vérification de la session...</p>
 	</div>
 {:else}
 	<div
 		id="login-content"
-		class="flex h-[calc(100vh-4rem)] items-center justify-center bg-gray-100 p-8 select-none"
+		class="flex h-[calc(100vh-4rem)] select-none items-center justify-center bg-transparent p-8"
 	>
 		<div
 			id="login-form-container"
-			class="flex max-h-[calc(100vh-6rem)] w-full max-w-md flex-col items-center gap-2 rounded-md bg-white p-8 shadow-lg"
+			class="flex max-h-[calc(100vh-6rem)] w-full max-w-md flex-col items-center gap-2 rounded-xl border border-sky-300/25 bg-slate-900/80 p-8 text-slate-100 shadow-lg shadow-slate-950/60 backdrop-blur-sm"
 		>
-			<img id="epitrello-logo" src={Epitrellologo} alt="Epitrello Logo" class="w-12 invert-100 m-4 scale-120" />
-			<h2 class="m-2 text-center font-mono text-2xl">Login to EpiTrello</h2>
+			<img
+				id="epitrello-logo"
+				src={Epitrellologo}
+				alt="Epitrello Logo"
+				class="w-12 m-4 scale-120"
+			/>
+			<h2 class="m-2 text-center text-2xl font-bold tracking-wide text-slate-100">
+				Login to EpiTrello
+			</h2>
 
-		{#if error}
-			<div class="mb-4 rounded-md bg-red-100 px-3 py-2 text-sm text-red-700">
-				{error}
+			{#if error}
+				<div
+					class="mb-4 rounded-md border border-rose-300/40 bg-rose-500/20 px-3 py-2 text-sm text-rose-100"
+				>
+					{error}
+				</div>
+			{/if}
+
+			<form class="flex flex-col gap-6 w-[80%] m-4" on:submit|preventDefault={handleSubmit}>
+				<div class="flex flex-col">
+					<input
+						type="email"
+						id="email"
+						name="email"
+						class="rounded-md border border-slate-600 bg-slate-800/80 p-2 text-slate-100 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none"
+						placeholder="Email"
+						required
+						bind:value={email}
+					/>
+				</div>
+
+				<div class="flex flex-col">
+					<input
+						type="password"
+						id="password"
+						name="password"
+						class="rounded-md border border-slate-600 bg-slate-800/80 p-2 text-slate-100 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none"
+						placeholder="Password"
+						required
+						bind:value={password}
+					/>
+				</div>
+
+				<button
+					type="submit"
+					class="cursor-pointer rounded-md bg-sky-600 px-4 py-2 text-white shadow-md shadow-sky-900/50 transition-all hover:bg-sky-500 disabled:opacity-60"
+					disabled={loading}
+				>
+					{#if loading}
+						Connecting...
+					{:else}
+						Login
+					{/if}
+				</button>
+			</form>
+			<div class="w-[80%] border-t border-slate-600/60 pt-4 text-center">
+				<p class="mb-2 text-sm text-slate-300">Or continue with</p>
+				<a
+					href="/auth/github"
+					class="mb-2 inline-flex w-64 items-center justify-center gap-4 rounded-md border border-slate-500/60 bg-slate-800 px-4 py-2 font-medium text-slate-100 shadow-sm shadow-slate-950/60 transition-all hover:bg-slate-700"
+				>
+					<img src={GithubLogo} alt="GitHub Logo" class="w-6 invert" />
+					<p>Login with GitHub</p>
+				</a>
+				<a
+					href="/auth/microsoft"
+					class="inline-flex w-64 items-center justify-center gap-4 rounded-md border border-sky-300/25 bg-sky-900/35 px-4 py-2 font-medium text-slate-100 shadow-sm shadow-sky-950/60 transition-all hover:bg-sky-800/50"
+				>
+					<img src={MicrosoftLogo} alt="Microsoft Logo" class="w-6" />
+					<p>Login with Microsoft</p>
+				</a>
 			</div>
-		{/if}
-
-		<form class="flex flex-col gap-6 w-[80%] m-4" on:submit|preventDefault={handleSubmit}>
-			<div class="flex flex-col">
-				<input
-					type="email"
-					id="email"
-					name="email"
-					class="rounded-md border border-gray-300 p-2"
-					placeholder="Email"
-					required
-					bind:value={email}
-				/>
-			</div>
-
-			<div class="flex flex-col">
-				<input
-					type="password"
-					id="password"
-					name="password"
-					class="rounded-md border border-gray-300 p-2"
-					placeholder="Password"
-					required
-					bind:value={password}
-				/>
-			</div>
-
-			<button
-				type="submit"
-				class="rounded-md bg-sky-600 px-4 py-2 text-white shadow-md shadow-gray-300 hover:bg-sky-500 disabled:opacity-60 transition-all hover:cursor-pointer"
-				disabled={loading}
-			>
-				{#if loading}
-					Connecting...
-				{:else}
-					Login
-				{/if}
-			</button>
-		</form>
-		<div class="border-t pt-4 text-center w-[80%]">
-			<p class="mb-2 font-mono text-sm text-gray-500">Or continue with</p>
-			<a
-				href="/auth/github"
-				class="inline-flex items-center gap-4 mb-2 justify-center rounded-md bg-gray-900 px-4 py-2 font-medium text-white hover:bg-gray-800 transition-all shadow-md w-64"
-			>
-				<img src={GithubLogo} alt="GitHub Logo" class="w-6 invert" />
-				<p>Login with GitHub</p>
-			</a>
-			<a
-				href="/auth/microsoft"
-				class="inline-flex items-center gap-4 justify-center rounded-md bg-gray-200 px-4 py-2 font-medium text-gray-700 hover:bg-gray-300 transition-all shadow-md w-64"
-			>
-				<img src={MicrosoftLogo} alt="Microsoft Logo" class="w-6" />
-				<p>Login with Microsoft</p>
-			</a>
 		</div>
 	</div>
-</div>
 {/if}

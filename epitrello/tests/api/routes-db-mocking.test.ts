@@ -17,7 +17,7 @@ type FullBoardMock = {
 		uuid: string;
 		name: string;
 		order: number;
-		cards?: Array<{ uuid: string; name: string; order: number }>;
+		cards?: Array<{ uuid: string; name: string; order: number; completed?: boolean }>;
 	}>;
 } | null;
 
@@ -216,9 +216,12 @@ const tagsRoute = await import('../../src/routes/api/tags/+server');
 const boardFullRoute = await import('../../src/routes/api/board-full/+server');
 const loginRoute = await import('../../src/routes/api/login/+server');
 
-const expectHttpErrorStatus = async (promise: Promise<unknown>, status: number) => {
+const expectHttpErrorStatus = async (
+	maybePromise: PromiseLike<unknown> | unknown,
+	status: number
+) => {
 	try {
-		await promise;
+		await maybePromise;
 		throw new Error('Expected handler to throw an HttpError');
 	} catch (error: any) {
 		expect(error?.status).toBe(status);
@@ -510,6 +513,19 @@ describe('api/lists +server', () => {
 		expect(state.rdbHsetCalls).toEqual([{ key: 'list:list-1', values: { name: 'Done' } }]);
 	});
 
+	it('PATCH updates list order', async () => {
+		const response = await listsRoute.PATCH({
+			request: new Request('http://localhost/api/lists', {
+				method: 'PATCH',
+				body: JSON.stringify({ listId: 'list-1', order: 3 })
+			})
+		} as any);
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ ok: true });
+		expect(state.rdbHsetCalls).toEqual([{ key: 'list:list-1', values: { order: 3 } }]);
+	});
+
 	it('PATCH throws 400 when payload is incomplete', async () => {
 		await expectHttpErrorStatus(
 			listsRoute.PATCH({
@@ -626,6 +642,88 @@ describe('api/cards +server', () => {
 		expect(state.rdbHsetCalls).toEqual([{ key: 'card:card-1', values: { name: 'Renamed card' } }]);
 		expect(state.rdbSremCalls).toHaveLength(0);
 		expect(state.rdbSaddCalls).toHaveLength(0);
+	});
+
+	it('PATCH updates card completed state when provided', async () => {
+		const response = await cardsRoute.PATCH({
+			request: new Request('http://localhost/api/cards', {
+				method: 'PATCH',
+				body: JSON.stringify({ cardId: 'card-1', completed: true })
+			})
+		} as any);
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ ok: true });
+		expect(state.rdbHsetCalls).toEqual([{ key: 'card:card-1', values: { completed: 1 } }]);
+	});
+
+	it('PATCH updates card description and due date when provided', async () => {
+		const response = await cardsRoute.PATCH({
+			request: new Request('http://localhost/api/cards', {
+				method: 'PATCH',
+				body: JSON.stringify({
+					cardId: 'card-1',
+					description: 'Ship v1 with editor',
+					dueDate: '2026-02-20'
+				})
+			})
+		} as any);
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ ok: true });
+		expect(state.rdbHsetCalls).toEqual([
+			{ key: 'card:card-1', values: { description: 'Ship v1 with editor' } },
+			{ key: 'card:card-1', values: { dueDate: '2026-02-20' } }
+		]);
+	});
+
+	it('PATCH replaces assignees set when assignees are provided', async () => {
+		const response = await cardsRoute.PATCH({
+			request: new Request('http://localhost/api/cards', {
+				method: 'PATCH',
+				body: JSON.stringify({
+					cardId: 'card-1',
+					assignees: [' Alice ', '', 'Bob']
+				})
+			})
+		} as any);
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ ok: true });
+		expect(state.rdbDelCalls).toEqual(['card:card-1:assignees']);
+		expect(state.rdbSaddCalls).toEqual([
+			{ key: 'card:card-1:assignees', value: 'Alice' },
+			{ key: 'card:card-1:assignees', value: 'Bob' }
+		]);
+	});
+
+	it('PATCH reorders a card inside the same list when targetIndex is provided', async () => {
+		state.rdbSmembersValues['list:list-a:cards'] = ['card-1', 'card-2', 'card-3'];
+		state.rdbHgetValues['card:card-1:order'] = '0';
+		state.rdbHgetValues['card:card-2:order'] = '1';
+		state.rdbHgetValues['card:card-3:order'] = '2';
+
+		const response = await cardsRoute.PATCH({
+			request: new Request('http://localhost/api/cards', {
+				method: 'PATCH',
+				body: JSON.stringify({
+					cardId: 'card-1',
+					fromListId: 'list-a',
+					toListId: 'list-a',
+					targetIndex: 1
+				})
+			})
+		} as any);
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ ok: true });
+		expect(state.rdbSremCalls).toHaveLength(0);
+		expect(state.rdbSaddCalls).toHaveLength(0);
+		expect(state.rdbHsetCalls).toEqual([
+			{ key: 'card:card-2', values: { list: 'list-a', order: 0 } },
+			{ key: 'card:card-1', values: { list: 'list-a', order: 1 } },
+			{ key: 'card:card-3', values: { list: 'list-a', order: 2 } }
+		]);
 	});
 
 	it('PATCH moves a card between lists when both list ids are provided', async () => {
@@ -874,7 +972,9 @@ describe('api/board-full +server', () => {
 					uuid: 'list-1',
 					name: 'Todo',
 					order: 1,
-					cards: [{ uuid: 'card-1', name: 'Implement integration tests', order: 2 }]
+					cards: [
+						{ uuid: 'card-1', name: 'Implement integration tests', order: 2, completed: true }
+					]
 				},
 				{
 					uuid: 'list-2',
@@ -905,7 +1005,11 @@ describe('api/board-full +server', () => {
 						{
 							uuid: 'card-1',
 							title: 'Implement integration tests',
+							description: '',
+							dueDate: '',
+							assignees: [],
 							order: 2,
+							completed: true,
 							tags: ['backend', 'urgent']
 						}
 					]
@@ -919,7 +1023,11 @@ describe('api/board-full +server', () => {
 			]
 		});
 		expect(state.getFullBoardCalls).toEqual(['board-1']);
-		expect(state.rdbSmembersCalls).toEqual(['card:card-1:tags']);
+		expect(state.rdbSmembersCalls).toEqual(['card:card-1:tags', 'card:card-1:assignees']);
+		expect(state.rdbHgetCalls).toEqual([
+			{ key: 'card:card-1', field: 'dueDate' },
+			{ key: 'card:card-1', field: 'description' }
+		]);
 		expect(state.rdbHgetallCalls).toEqual(['tag:tag-1', 'tag:tag-2', 'tag:tag-3']);
 	});
 });
