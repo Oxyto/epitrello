@@ -857,7 +857,7 @@
 			{#each lists as list, i}
 				{#if listDropPreviewIndex === i}
 					<div
-						class={`min-h-[180px] min-w-[220px] rounded-xl border-2 border-dashed border-sky-300/70 bg-sky-400/20 ${draggedListIndex === null ? 'pointer-events-none' : ''}`}
+						class={`min-w-[220px] self-stretch rounded-xl border-2 border-dashed border-sky-300/70 bg-sky-400/20 ${draggedListIndex === null ? 'pointer-events-none' : ''}`}
 						role="group"
 						aria-label="List drop preview"
 						ondragover={(event) => handleListPreviewDragOver(i, event)}
@@ -969,7 +969,7 @@
 			{/each}
 			{#if listDropPreviewIndex === lists.length}
 				<div
-					class={`min-h-[180px] min-w-[220px] rounded-xl border-2 border-dashed border-sky-300/70 bg-sky-400/20 ${draggedListIndex === null ? 'pointer-events-none' : ''}`}
+					class={`min-w-[220px] self-stretch rounded-xl border-2 border-dashed border-sky-300/70 bg-sky-400/20 ${draggedListIndex === null ? 'pointer-events-none' : ''}`}
 					role="group"
 					aria-label="List drop preview"
 					ondragover={(event) => handleListPreviewDragOver(lists.length, event)}
