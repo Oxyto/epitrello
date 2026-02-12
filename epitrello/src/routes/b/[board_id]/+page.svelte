@@ -844,13 +844,21 @@
 			class="mb-3 flex items-center gap-3 rounded-xl border border-sky-300/30 bg-slate-800/70 p-3 shadow-md shadow-slate-950/50 backdrop-blur-sm"
 		>
 			<input
-				class="rounded-md border-0 bg-transparent px-2 py-1 text-2xl font-bold text-slate-100 transition-colors hover:bg-slate-700/60 focus:outline-0"
+				class="flex-1 rounded-md border-0 bg-transparent px-2 py-1 text-2xl font-bold text-slate-100 transition-colors hover:bg-slate-700/60 focus:outline-0"
 				title="Board Name"
 				type="text"
 				bind:value={board_name}
 				placeholder="Board name..."
 				onblur={persistBoardName}
 			/>
+			{#if boardId}
+				<a
+					href={`/b/${boardId}/settings`}
+					class="rounded-md border border-sky-300/25 bg-slate-700/75 px-3 py-2 text-sm font-semibold text-slate-100 transition-colors hover:bg-slate-600/90"
+				>
+					Paramètres
+				</a>
+			{/if}
 		</div>
 
 		<div class="flex gap-3 overflow-x-auto px-2 py-3">
