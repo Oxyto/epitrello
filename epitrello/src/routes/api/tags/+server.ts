@@ -1,12 +1,22 @@
 import type { RequestHandler } from './$types';
 import { json, error } from '@sveltejs/kit';
 import { TagConnector, rdb, type UUID } from '$lib/server/redisConnector';
+import { getBoardIdFromCard, requireBoardAccess } from '$lib/server/boardAccess';
 
 export const POST: RequestHandler = async ({ request }) => {
-	const { cardId, name } = await request.json();
+	const { cardId, name, userId } = await request.json();
 
 	if (!cardId || !name) {
 		throw error(400, 'cardId and name required');
+	}
+
+	if (userId) {
+		const boardId = await getBoardIdFromCard(String(cardId));
+		if (!boardId) {
+			throw error(404, 'Card not found');
+		}
+
+		await requireBoardAccess(boardId as UUID, userId, 'edit');
 	}
 
 	try {
@@ -22,36 +32,46 @@ export const POST: RequestHandler = async ({ request }) => {
 };
 
 export const DELETE: RequestHandler = async ({ request }) => {
-  let body: any;
+	let body: any;
 
-  try {
-    body = await request.json();
-  } catch {
-    throw error(400, 'JSON body required');
-  }
+	try {
+		body = await request.json();
+	} catch {
+		throw error(400, 'JSON body required');
+	}
 
-  const cardId = body?.cardId as string | undefined;
-  const name = body?.name as string | undefined;
+	const cardId = body?.cardId as string | undefined;
+	const name = body?.name as string | undefined;
+	const userId = body?.userId as string | undefined;
 
-  if (!cardId || !name) {
-    throw error(400, 'cardId and name required');
-  }
+	if (!cardId || !name) {
+		throw error(400, 'cardId and name required');
+	}
 
-  try {
-    const tagIds = await rdb.smembers(`card:${cardId}:tags`);
+	if (userId) {
+		const boardId = await getBoardIdFromCard(cardId);
+		if (!boardId) {
+			throw error(404, 'Card not found');
+		}
 
-    for (const tagId of tagIds) {
-      const tagName = await rdb.hget(`tag:${tagId}`, 'name');
+		await requireBoardAccess(boardId as UUID, userId, 'edit');
+	}
 
-      if (tagName === name) {
-        await rdb.srem(`card:${cardId}:tags`, tagId);
-        await rdb.del(`tag:${tagId}`);
-      }
-    }
+	try {
+		const tagIds = await rdb.smembers(`card:${cardId}:tags`);
 
-    return json({ ok: true });
-  } catch (e) {
-    console.error('Erreur delete tag', e);
-    throw error(500, 'delete tag failed');
-  }
+		for (const tagId of tagIds) {
+			const tagName = await rdb.hget(`tag:${tagId}`, 'name');
+
+			if (tagName === name) {
+				await rdb.srem(`card:${cardId}:tags`, tagId);
+				await rdb.del(`tag:${tagId}`);
+			}
+		}
+
+		return json({ ok: true });
+	} catch (e) {
+		console.error('Erreur delete tag', e);
+		throw error(500, 'delete tag failed');
+	}
 };

@@ -9,10 +9,18 @@
 			user_id: string;
 			email: string;
 			name: string | null;
-			boards: Array<{
+			ownedBoards: Array<{
 				uuid: string;
 				name: string;
 				owner: string;
+				role: 'owner';
+			}>;
+			sharedBoards: Array<{
+				uuid: string;
+				name: string;
+				owner: string;
+				ownerName: string;
+				role: 'editor' | 'viewer';
 			}>;
 		};
 	}>();
@@ -54,7 +62,10 @@
 		const confirmDelete = confirm('Supprimer ce board ?');
 		if (!confirmDelete) return;
 
-		const res = await fetch(`/api/boards?id=${uuid}`, { method: 'DELETE' });
+		const res = await fetch(
+			`/api/boards?id=${encodeURIComponent(uuid)}&userId=${encodeURIComponent(data.user_id)}`,
+			{ method: 'DELETE' }
+		);
 
 		if (!res.ok) {
 			console.error('Erreur suppression board', await res.text());
@@ -72,15 +83,13 @@
 		class="mx-8 my-10 rounded-xl border border-sky-300/25 bg-slate-900/75 p-5 text-slate-100 shadow-lg shadow-slate-950/60 backdrop-blur-sm md:mx-24 xl:mx-64"
 	>
 		<h2 class="mb-3 text-xl font-bold tracking-wide select-none">Mes boards</h2>
-		{#if data.boards && data.boards.length}
+		{#if data.ownedBoards && data.ownedBoards.length}
 			<ul class="flex flex-wrap gap-3">
-				{#each data.boards as board}
-					<!-- j'ai enlevé le * ici -->
+				{#each data.ownedBoards as board}
 					<li
 						class="w-48 rounded-lg border border-sky-300/25 bg-slate-800/85 p-3 text-slate-100 shadow-md shadow-slate-950/50"
 					>
 						<div class="flex items-center justify-between gap-2">
-							<!-- ICI : lien vers la page du board -->
 							<a
 								href={`/b/${board.uuid}`}
 								class="block text-lg font-semibold text-slate-100 hover:underline"
@@ -106,6 +115,39 @@
 			<p class="text-sm text-slate-300">
 				Aucun board pour le moment. Utilise le bouton "Create" pour en créer un.
 			</p>
+		{/if}
+
+		<h2 class="mb-3 mt-8 text-xl font-bold tracking-wide select-none">Boards partagés</h2>
+		{#if data.sharedBoards && data.sharedBoards.length}
+			<ul class="flex flex-wrap gap-3">
+				{#each data.sharedBoards as board}
+					<li
+						class="w-56 rounded-lg border border-sky-300/25 bg-slate-800/85 p-3 text-slate-100 shadow-md shadow-slate-950/50"
+					>
+						<div class="flex items-center justify-between gap-2">
+							<a
+								href={`/b/${board.uuid}`}
+								class="block text-lg font-semibold text-slate-100 hover:underline"
+							>
+								{board.name}
+							</a>
+							<span
+								class="rounded-md border border-slate-500/60 bg-slate-700/90 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-200"
+							>
+								{board.role}
+							</span>
+						</div>
+						<p class="mt-1 text-xs text-slate-400">
+							Owner: {board.ownerName}
+						</p>
+						<p class="mt-1 text-xs text-slate-400">
+							#{board.uuid}
+						</p>
+					</li>
+				{/each}
+			</ul>
+		{:else}
+			<p class="text-sm text-slate-300">Aucun board partagé pour le moment.</p>
 		{/if}
 	</div>
 {:else}

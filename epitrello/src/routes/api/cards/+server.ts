@@ -1,6 +1,11 @@
 import type { RequestHandler } from './$types';
 import { json, error } from '@sveltejs/kit';
 import { CardConnector, rdb, type UUID } from '$lib/server/redisConnector';
+import {
+	getBoardIdFromCard,
+	getBoardIdFromList,
+	requireBoardAccess
+} from '$lib/server/boardAccess';
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(value, max));
 
@@ -64,10 +69,19 @@ async function reorderCard(
 }
 
 export const POST: RequestHandler = async ({ request }) => {
-	const { listId, title } = await request.json();
+	const { listId, title, userId } = await request.json();
 
 	if (!listId || !title) {
 		throw error(400, 'listId and title required');
+	}
+
+	if (userId) {
+		const boardId = await getBoardIdFromList(String(listId));
+		if (!boardId) {
+			throw error(404, 'List not found');
+		}
+
+		await requireBoardAccess(boardId as UUID, userId, 'edit');
 	}
 
 	try {
@@ -97,7 +111,8 @@ export const PATCH: RequestHandler = async ({ request }) => {
 		fromListId,
 		toListId,
 		targetIndex,
-		completed
+		completed,
+		userId
 	} = body as {
 		cardId?: string;
 		name?: string;
@@ -108,10 +123,22 @@ export const PATCH: RequestHandler = async ({ request }) => {
 		toListId?: string;
 		targetIndex?: number;
 		completed?: boolean;
+		userId?: string;
 	};
 
 	if (!cardId) {
 		throw error(400, 'cardId required');
+	}
+
+	if (userId) {
+		const boardId =
+			(await getBoardIdFromCard(cardId)) ??
+			(fromListId ? await getBoardIdFromList(fromListId) : null);
+		if (!boardId) {
+			throw error(404, 'Card not found');
+		}
+
+		await requireBoardAccess(boardId as UUID, userId, 'edit');
 	}
 
 	if (typeof name === 'string') {
@@ -153,6 +180,7 @@ export const PATCH: RequestHandler = async ({ request }) => {
 };
 export const DELETE: RequestHandler = async ({ url, request }) => {
 	let id = url.searchParams.get('id');
+	let userId = url.searchParams.get('userId');
 
 	if (!id) {
 		try {
@@ -160,11 +188,23 @@ export const DELETE: RequestHandler = async ({ url, request }) => {
 			if (body && typeof body.cardId === 'string') {
 				id = body.cardId;
 			}
+			if (!userId && body && typeof body.userId === 'string') {
+				userId = body.userId;
+			}
 		} catch {}
 	}
 
 	if (!id) {
 		throw error(400, 'cardId required');
+	}
+
+	if (userId) {
+		const boardId = await getBoardIdFromCard(id);
+		if (!boardId) {
+			throw error(404, 'Card not found');
+		}
+
+		await requireBoardAccess(boardId as UUID, userId, 'edit');
 	}
 
 	try {

@@ -3,6 +3,7 @@ import { json, error } from '@sveltejs/kit';
 import { rdb } from '$lib/server/redisConnector';
 import type { UUID } from 'crypto';
 import { UserConnector, BoardConnector } from '$lib/server/redisConnector';
+import { requireBoardAccess } from '$lib/server/boardAccess';
 
 export const POST: RequestHandler = async ({ request }) => {
 	const body = await request.json().catch(() => null);
@@ -23,7 +24,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		return json({ error: 'Utilisateur introuvable' }, { status: 404 });
 	}
 
-	const uuid = await BoardConnector.create(ownerId, name); 
+	const uuid = await BoardConnector.create(ownerId, name);
 	const board = await BoardConnector.get(uuid as UUID);
 	if (!board) {
 		return json(
@@ -46,11 +47,15 @@ export const POST: RequestHandler = async ({ request }) => {
 	);
 };
 export const PATCH: RequestHandler = async ({ request }) => {
-	const { boardId, name } = await request.json();
+	const { boardId, name, userId } = await request.json();
 
 	if (!boardId || !name) {
 		throw error(400, 'boardId and name required');
 	}
+
+	await requireBoardAccess(boardId as UUID, userId, 'owner', {
+		allowLegacyWithoutUserId: true
+	});
 
 	await rdb.hset(`board:${boardId}`, { name });
 
@@ -59,10 +64,15 @@ export const PATCH: RequestHandler = async ({ request }) => {
 
 export const DELETE: RequestHandler = async ({ url }) => {
 	const id = url.searchParams.get('id');
+	const userId = url.searchParams.get('userId');
 
 	if (!id) {
 		return json({ error: 'Paramètre id manquant' }, { status: 400 });
 	}
+
+	await requireBoardAccess(id as UUID, userId, 'owner', {
+		allowLegacyWithoutUserId: true
+	});
 
 	await BoardConnector.del(id as UUID);
 

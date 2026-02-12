@@ -1,14 +1,22 @@
 import type { RequestHandler } from './$types';
 import { json, error } from '@sveltejs/kit';
 import { getFullBoard, rdb } from '$lib/server/redisConnector';
+import { canEditBoard, canManageBoard, requireBoardAccess } from '$lib/server/boardAccess';
 
 type UUID = string;
 
 export const GET: RequestHandler = async ({ url }) => {
 	const boardId = url.searchParams.get('boardId');
+	const userId = url.searchParams.get('userId');
+
 	if (!boardId) {
 		throw error(400, 'boardId required');
 	}
+	if (!userId) {
+		throw error(400, 'userId required');
+	}
+
+	const { role } = await requireBoardAccess(boardId as UUID, userId, 'view');
 
 	const full = await getFullBoard(boardId as UUID);
 	if (!full) {
@@ -58,7 +66,10 @@ export const GET: RequestHandler = async ({ url }) => {
 	return json({
 		board: {
 			id: full.board.uuid,
-			name: full.board.name
+			name: full.board.name,
+			role,
+			canEdit: canEditBoard(role),
+			canManage: canManageBoard(role)
 		},
 		lists
 	});

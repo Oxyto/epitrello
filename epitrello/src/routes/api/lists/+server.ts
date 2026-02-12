@@ -1,13 +1,18 @@
 import type { RequestHandler } from './$types';
 import { json, error } from '@sveltejs/kit';
 import { ListConnector, rdb, type UUID } from '$lib/server/redisConnector';
+import { getBoardIdFromList, requireBoardAccess } from '$lib/server/boardAccess';
 
 export const POST: RequestHandler = async ({ request }) => {
-	const { boardId, name } = await request.json();
+	const { boardId, name, userId } = await request.json();
 
 	if (!boardId || !name) {
 		throw error(400, 'boardId and name required');
 	}
+
+	await requireBoardAccess(boardId as UUID, userId, 'edit', {
+		allowLegacyWithoutUserId: true
+	});
 
 	try {
 		const listId = await ListConnector.create(boardId as UUID, name);
@@ -20,10 +25,19 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 };
 export const PATCH: RequestHandler = async ({ request }) => {
-	const { listId, name, order } = await request.json();
+	const { listId, name, order, userId } = await request.json();
 
 	if (!listId) {
 		throw error(400, 'listId required');
+	}
+
+	if (userId) {
+		const boardId = await getBoardIdFromList(String(listId));
+		if (!boardId) {
+			throw error(404, 'List not found');
+		}
+
+		await requireBoardAccess(boardId as UUID, userId, 'edit');
 	}
 
 	const updates: Record<string, string | number> = {};
@@ -45,8 +59,18 @@ export const PATCH: RequestHandler = async ({ request }) => {
 
 export const DELETE: RequestHandler = async ({ url }) => {
 	const id = url.searchParams.get('id');
+	const userId = url.searchParams.get('userId');
 	if (!id) {
 		throw error(400, 'id required');
+	}
+
+	if (userId) {
+		const boardId = await getBoardIdFromList(id);
+		if (!boardId) {
+			throw error(404, 'List not found');
+		}
+
+		await requireBoardAccess(boardId as UUID, userId, 'edit');
 	}
 
 	try {

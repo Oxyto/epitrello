@@ -952,12 +952,22 @@ describe('api/board-full +server', () => {
 		expect(state.getFullBoardCalls).toHaveLength(0);
 	});
 
+	it('GET throws 400 when userId is missing', async () => {
+		await expectHttpErrorStatus(
+			boardFullRoute.GET({
+				url: new URL('http://localhost/api/board-full?boardId=board-1')
+			} as any),
+			400
+		);
+		expect(state.getFullBoardCalls).toHaveLength(0);
+	});
+
 	it('GET throws 404 when board does not exist', async () => {
 		state.getFullBoardValue = null;
 
 		await expectHttpErrorStatus(
 			boardFullRoute.GET({
-				url: new URL('http://localhost/api/board-full?boardId=board-404')
+				url: new URL('http://localhost/api/board-full?boardId=board-404&userId=user-1')
 			} as any),
 			404
 		);
@@ -990,12 +1000,18 @@ describe('api/board-full +server', () => {
 		state.rdbHgetallValues['tag:tag-3'] = { color: 'gray' };
 
 		const response = await boardFullRoute.GET({
-			url: new URL('http://localhost/api/board-full?boardId=board-1')
+			url: new URL('http://localhost/api/board-full?boardId=board-1&userId=user-1')
 		} as any);
 
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({
-			board: { id: 'board-1', name: 'Roadmap' },
+			board: {
+				id: 'board-1',
+				name: 'Roadmap',
+				role: 'owner',
+				canEdit: true,
+				canManage: true
+			},
 			lists: [
 				{
 					uuid: 'list-1',

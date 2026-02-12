@@ -1,5 +1,5 @@
 import { UserSchema, type IUser } from '$lib/interfaces/IUser';
-import { BoardSchema, type IBoard } from '$lib/interfaces/IBoard';
+import { BoardSchema, type IBoard, type ShareRole } from '$lib/interfaces/IBoard';
 import { ListSchema, type IList } from '$lib/interfaces/IList';
 import { TagSchema, type ITag } from '$lib/interfaces/ITag';
 import { CardSchema, type ICard } from '$lib/interfaces/ICard';
@@ -68,11 +68,28 @@ export class UserConnector {
 
 	static async del(userId: UUID) {
 		const boards_query = await rdb.smembers(`user:${userId}:boards`);
+		const sharedBoards_query = await rdb.smembers(`user:${userId}:shared_boards`);
 
 		if (boards_query) {
 			await Promise.all(boards_query.map((boardId) => BoardConnector.del(boardId as UUID)));
 		}
-		await Promise.all([rdb.del(`user:${userId}`), rdb.del(`user:${userId}:boards`)]);
+
+		if (sharedBoards_query && sharedBoards_query.length > 0) {
+			await Promise.all(
+				sharedBoards_query.map((boardId) =>
+					Promise.all([
+						rdb.srem(`board:${boardId}:editors`, userId),
+						rdb.srem(`board:${boardId}:viewers`, userId)
+					])
+				)
+			);
+		}
+
+		await Promise.all([
+			rdb.del(`user:${userId}`),
+			rdb.del(`user:${userId}:boards`),
+			rdb.del(`user:${userId}:shared_boards`)
+		]);
 	}
 }
 
@@ -85,7 +102,9 @@ export class BoardConnector {
 			name,
 			owner: ownerId,
 			background_image_url: '',
-			theme: 'default'
+			theme: 'default',
+			share_token: Bun.randomUUIDv7(),
+			share_default_role: 'viewer'
 		});
 
 		await rdb.sadd(`user:${ownerId}:boards`, uuid);
@@ -98,7 +117,9 @@ export class BoardConnector {
 			name: board.name,
 			owner: board.owner,
 			background_image_url: board.background_image_url,
-			theme: board.theme
+			theme: board.theme,
+			share_token: board.share_token,
+			share_default_role: board.share_default_role
 		});
 
 		if (board.editors) {
@@ -137,7 +158,7 @@ export class BoardConnector {
 	static async getAllByOwnerId(ownerUUID: UUID): Promise<IBoard[] | null> {
 		const boards_query = await rdb.smembers(`user:${ownerUUID}:boards`);
 
-		if (!boards_query || Object.keys(boards_query).length === 0) {
+		if (!boards_query || boards_query.length === 0) {
 			return null;
 		}
 
@@ -150,18 +171,67 @@ export class BoardConnector {
 		).filter((board) => board !== null);
 	}
 
+	static async getAllSharedByUserId(userUUID: UUID): Promise<IBoard[] | null> {
+		const boards_query = await rdb.smembers(`user:${userUUID}:shared_boards`);
+
+		if (!boards_query || boards_query.length === 0) {
+			return null;
+		}
+
+		return (
+			await Promise.all(
+				boards_query
+					.filter((boardId) => boardId !== null)
+					.map((boardId) => BoardConnector.get(boardId as UUID))
+			)
+		).filter((board) => board !== null);
+	}
+
+	static async addUserToBoardRole(boardId: UUID, userId: UUID, role: ShareRole) {
+		await rdb.srem(`board:${boardId}:editors`, userId);
+		await rdb.srem(`board:${boardId}:viewers`, userId);
+
+		if (role === 'editor') {
+			await rdb.sadd(`board:${boardId}:editors`, userId);
+		} else {
+			await rdb.sadd(`board:${boardId}:viewers`, userId);
+		}
+		await rdb.sadd(`user:${userId}:shared_boards`, boardId);
+	}
+
+	static async removeUserFromBoard(boardId: UUID, userId: UUID) {
+		await Promise.all([
+			rdb.srem(`board:${boardId}:editors`, userId),
+			rdb.srem(`board:${boardId}:viewers`, userId),
+			rdb.srem(`user:${userId}:shared_boards`, boardId)
+		]);
+	}
+
 	static async del(boardId: UUID) {
+		const board = await BoardConnector.get(boardId);
 		const lists_query = await rdb.smembers(`board:${boardId}:lists`);
 
 		if (lists_query) {
 			await Promise.all(lists_query.map((listId) => ListConnector.del(listId as UUID)));
 		}
 
+		if (board) {
+			await Promise.all([
+				rdb.srem(`user:${board.owner}:boards`, boardId),
+				...(board.editors ?? []).map((editorId) =>
+					rdb.srem(`user:${editorId}:shared_boards`, boardId)
+				),
+				...(board.viewers ?? []).map((viewerId) =>
+					rdb.srem(`user:${viewerId}:shared_boards`, boardId)
+				)
+			]);
+		}
+
 		await Promise.all([
-			await rdb.del(`board:${boardId}`),
-			await rdb.del(`board:${boardId}:editors`),
-			await rdb.del(`board:${boardId}:viewers`),
-			await rdb.del(`board:${boardId}:lists`)
+			rdb.del(`board:${boardId}`),
+			rdb.del(`board:${boardId}:editors`),
+			rdb.del(`board:${boardId}:viewers`),
+			rdb.del(`board:${boardId}:lists`)
 		]);
 	}
 }

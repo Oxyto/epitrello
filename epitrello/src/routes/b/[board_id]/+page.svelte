@@ -2,6 +2,7 @@
 	import UserSearchBar from '../../user_search_bar.svelte';
 	import Card from './card.svelte';
 	import { browser } from '$app/environment';
+	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 
 	type UiCard = {
@@ -22,7 +23,13 @@
 		newCardTitle: string;
 	};
 	type BoardFullResponse = {
-		board: { id: string; name: string };
+		board: {
+			id: string;
+			name: string;
+			role: 'owner' | 'editor' | 'viewer';
+			canEdit: boolean;
+			canManage: boolean;
+		};
 		lists: Array<{
 			uuid: string;
 			name: string;
@@ -49,6 +56,12 @@
 
 	let ready = $state(false);
 	let board_name = $state('Board');
+	let currentUserId = $state('');
+	let boardRole = $state<'owner' | 'editor' | 'viewer' | null>(null);
+	let canEdit = $state(false);
+	let canManage = $state(false);
+	let loadError = $state('');
+	let inviteMessage = $state('');
 
 	let lists = $state<UiList[]>([]);
 	let newListName = $state('');
@@ -77,6 +90,9 @@
 		if (!payload || !payload.board) return;
 
 		board_name = payload.board.name ?? board_name;
+		boardRole = payload.board.role;
+		canEdit = payload.board.canEdit;
+		canManage = payload.board.canManage;
 		let localId = 1;
 
 		const mapped: UiList[] = payload.lists.map((list) => ({
@@ -100,11 +116,15 @@
 	}
 
 	async function loadBoardFull() {
-		if (!browser || !boardId) return;
+		if (!browser || !boardId || !currentUserId) return;
+		loadError = '';
 
 		try {
-			const res = await fetch(`/api/board-full?boardId=${boardId}`);
+			const res = await fetch(
+				`/api/board-full?boardId=${boardId}&userId=${encodeURIComponent(currentUserId)}`
+			);
 			if (!res.ok) {
+				loadError = res.status === 403 ? 'Access denied for this board.' : 'Unable to load board.';
 				console.warn('Erreur /api/board-full', await res.text());
 				return;
 			}
@@ -112,49 +132,40 @@
 			console.log('board-full payload', payload);
 			applyLoadedState(payload);
 		} catch (err) {
+			loadError = 'Network error while loading board.';
 			console.error('Erreur réseau /api/board-full', err);
 		}
 	}
 
-	async function loadBoardFromRedis() {
-		if (!browser || !boardId) return;
+	async function tryJoinWithInvite(inviteToken: string) {
+		if (!browser || !boardId || !currentUserId || !inviteToken) return;
 
 		try {
-			const res = await fetch(`/api/board-full?boardId=${boardId}`);
+			const res = await fetch('/api/board-sharing', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					boardId,
+					userId: currentUserId,
+					inviteToken
+				})
+			});
+
 			if (!res.ok) {
-				console.warn('board-full error', await res.text());
+				inviteMessage = 'Invalid or expired invite link.';
+				console.error('Erreur join invite', await res.text());
 				return;
 			}
 
-			const payload = (await res.json()) as {
-				board: { uuid: string; name: string };
-				lists: Array<{
-					uuid: string;
-					name: string;
-					cards: Array<{ uuid: string; title: string; completed: boolean; tags: string[] }>;
-				}>;
-			};
+			const payload = (await res.json()) as { joined: boolean };
+			inviteMessage = payload.joined ? 'You joined this board.' : '';
 
-			board_name = payload.board.name;
-
-			let localId = 1;
-			lists = payload.lists.map((l) => ({
-				uuid: l.uuid,
-				name: l.name,
-				newCardTitle: '',
-				cards: (l.cards ?? []).map((c) => ({
-					id: localId++,
-					uuid: c.uuid,
-					title: c.title,
-					description: '',
-					dueDate: '',
-					assignees: [],
-					completed: c.completed ?? false,
-					tags: c.tags ?? []
-				}))
-			}));
+			const nextUrl = new URL(window.location.href);
+			nextUrl.searchParams.delete('invite');
+			window.history.replaceState({}, '', nextUrl.toString());
 		} catch (err) {
-			console.error('Erreur loadBoardFromRedis', err);
+			inviteMessage = 'Unable to join board with invite link.';
+			console.error('Erreur réseau join invite', err);
 		}
 	}
 
@@ -164,20 +175,49 @@
 			return;
 		}
 
+		const raw = localStorage.getItem('user');
+		if (!raw) {
+			goto('/login');
+			return;
+		}
+
+		let currentUser: { id?: string } | null = null;
+		try {
+			currentUser = JSON.parse(raw);
+		} catch {
+			localStorage.removeItem('user');
+			localStorage.removeItem('authToken');
+			goto('/login');
+			return;
+		}
+
+		if (!currentUser?.id) {
+			goto('/login');
+			return;
+		}
+
+		currentUserId = currentUser.id;
 		board_name = data.board?.name ?? board_name;
+
+		const inviteToken = new URL(window.location.href).searchParams.get('invite') ?? '';
+		if (inviteToken) {
+			await tryJoinWithInvite(inviteToken);
+		}
+
 		await loadBoardFull();
 		ready = true;
 	});
 
 	async function addList() {
+		if (!canEdit) return;
 		const name = newListName.trim();
-		if (!name || !boardId) return;
+		if (!name || !boardId || !currentUserId) return;
 
 		try {
 			const res = await fetch('/api/lists', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ boardId, name })
+				body: JSON.stringify({ boardId, name, userId: currentUserId })
 			});
 
 			if (!res.ok) {
@@ -204,12 +244,15 @@
 	}
 
 	async function deleteList(index: number) {
+		if (!canEdit) return;
 		const list = lists[index];
 		if (!list) return;
 		lists = lists.filter((_, i) => i !== index);
 		if (list.uuid) {
 			try {
-				const res = await fetch(`/api/lists?id=${encodeURIComponent(list.uuid)}`, {
+				const userParam = encodeURIComponent(currentUserId);
+				const listParam = encodeURIComponent(list.uuid);
+				const res = await fetch(`/api/lists?id=${listParam}&userId=${userParam}`, {
 					method: 'DELETE'
 				});
 				if (!res.ok) {
@@ -222,6 +265,7 @@
 	}
 
 	async function updateListName(index: number, event: Event) {
+		if (!canEdit) return;
 		const target = event.currentTarget as HTMLInputElement;
 		if (!lists[index]) return;
 
@@ -235,7 +279,7 @@
 			await fetch('/api/lists', {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ listId: listUuid, name: newName.trim() })
+				body: JSON.stringify({ listId: listUuid, name: newName.trim(), userId: currentUserId })
 			});
 		} catch (err) {
 			console.error('Erreur rename list', err);
@@ -248,7 +292,7 @@
 		lists[index].newCardTitle = target.value;
 	}
 	async function persistBoardName() {
-		if (!browser || !boardId) return;
+		if (!browser || !boardId || !canManage) return;
 
 		const name = board_name.trim();
 		if (!name) return;
@@ -257,7 +301,7 @@
 			await fetch('/api/boards', {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ boardId, name })
+				body: JSON.stringify({ boardId, name, userId: currentUserId })
 			});
 		} catch (err) {
 			console.error('Erreur rename board', err);
@@ -265,6 +309,7 @@
 	}
 
 	async function addCard(listIndex: number) {
+		if (!canEdit) return;
 		const list = lists[listIndex];
 		if (!list || !list.uuid) return;
 
@@ -287,7 +332,7 @@
 			const res = await fetch('/api/cards', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ listId: list.uuid, title })
+				body: JSON.stringify({ listId: list.uuid, title, userId: currentUserId })
 			});
 
 			if (!res.ok) {
@@ -306,6 +351,7 @@
 	}
 
 	async function handleDeleteCard(event: CustomEvent<{ listIndex: number; cardIndex: number }>) {
+		if (!canEdit) return;
 		const { listIndex, cardIndex } = event.detail;
 
 		if (!Array.isArray(lists) || !lists[listIndex]) {
@@ -345,7 +391,9 @@
 		lists = newLists;
 		if (cardUuid) {
 			try {
-				const res = await fetch(`/api/cards?id=${cardUuid}`, {
+				const encodedCardId = encodeURIComponent(cardUuid);
+				const encodedUserId = encodeURIComponent(currentUserId);
+				const res = await fetch(`/api/cards?id=${encodedCardId}&userId=${encodedUserId}`, {
 					method: 'DELETE'
 				});
 
@@ -391,13 +439,14 @@
 	}
 
 	async function persistCardFields(cardUuid: string | undefined, fields: Record<string, unknown>) {
-		if (!browser || !cardUuid) return;
+		if (!browser || !cardUuid || !canEdit) return;
 		try {
 			await fetch('/api/cards', {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					cardId: cardUuid,
+					userId: currentUserId,
 					...fields
 				})
 			});
@@ -454,7 +503,7 @@
 		toListUuid: string | undefined,
 		targetIndex: number
 	) {
-		if (!browser || !cardUuid || !fromListUuid || !toListUuid) return;
+		if (!browser || !cardUuid || !fromListUuid || !toListUuid || !canEdit) return;
 
 		try {
 			await fetch('/api/cards', {
@@ -464,7 +513,8 @@
 					cardId: cardUuid,
 					fromListId: fromListUuid,
 					toListId: toListUuid,
-					targetIndex
+					targetIndex,
+					userId: currentUserId
 				})
 			});
 		} catch (err) {
@@ -494,7 +544,7 @@
 	}
 
 	async function persistListsOrder() {
-		if (!browser) return;
+		if (!browser || !canEdit) return;
 
 		const updates = lists
 			.map((list, order) => (list.uuid ? { listId: list.uuid, order } : null))
@@ -506,7 +556,7 @@
 					const res = await fetch('/api/lists', {
 						method: 'PATCH',
 						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify({ listId, order })
+						body: JSON.stringify({ listId, order, userId: currentUserId })
 					});
 					if (!res.ok) {
 						console.error('Erreur persist list order', listId, order, await res.text());
@@ -527,6 +577,7 @@
 	}
 
 	function handleDragStart(event: CustomEvent<{ listIndex: number; cardIndex: number }>) {
+		if (!canEdit) return;
 		draggedCardRef = event.detail;
 		cardDropPreview = null;
 		listDropPreviewIndex = null;
@@ -538,6 +589,10 @@
 	}
 
 	function handleListDragStart(index: number, event: DragEvent) {
+		if (!canEdit) {
+			event.preventDefault();
+			return;
+		}
 		const target = event.target as HTMLElement | null;
 		if (
 			target?.closest(
@@ -582,6 +637,7 @@
 	}
 
 	async function handleListDrop(targetIndex: number, event: DragEvent) {
+		if (!canEdit) return;
 		if (draggedListIndex === null) return;
 		event.preventDefault();
 
@@ -606,6 +662,7 @@
 	}
 
 	async function handleListPreviewDrop(insertIndex: number, event: DragEvent) {
+		if (!canEdit) return;
 		if (draggedListIndex === null) return;
 		event.preventDefault();
 
@@ -621,6 +678,7 @@
 	function handleCardDragOver(
 		event: CustomEvent<{ listIndex: number; cardIndex: number; dropAfter: boolean }>
 	) {
+		if (!canEdit) return;
 		if (!draggedCardRef) return;
 		const { listIndex, cardIndex, dropAfter } = event.detail;
 		const targetIndex = cardIndex + (dropAfter ? 1 : 0);
@@ -649,6 +707,7 @@
 	}
 
 	function handleCardListDragOver(listIndex: number, event: DragEvent) {
+		if (!canEdit) return;
 		if (!draggedCardRef || !lists[listIndex]) return;
 		event.preventDefault();
 		const targetIndex = getCardInsertIndexFromPointer(listIndex, event);
@@ -658,6 +717,7 @@
 	async function handleDropOnCard(
 		event: CustomEvent<{ listIndex: number; cardIndex: number; dropAfter: boolean }>
 	) {
+		if (!canEdit) return;
 		if (!draggedCardRef) return;
 		const { listIndex, cardIndex, dropAfter } = event.detail;
 		const targetIndex = cardIndex + (dropAfter ? 1 : 0);
@@ -677,6 +737,7 @@
 	}
 
 	async function handleDropOnList(listIndex: number, event: DragEvent) {
+		if (!canEdit) return;
 		if (!draggedCardRef || !lists[listIndex]) return;
 		event.preventDefault();
 		const targetIndex = getCardInsertIndexFromPointer(listIndex, event);
@@ -696,6 +757,7 @@
 	}
 
 	function handleEditorTitleInput(event: Event) {
+		if (!canEdit) return;
 		const context = getSelectedCardContext();
 		if (!context) return;
 
@@ -704,6 +766,7 @@
 	}
 
 	async function handleEditorTitleBlur() {
+		if (!canEdit) return;
 		const context = getSelectedCardContext();
 		if (!context) return;
 
@@ -715,6 +778,7 @@
 	}
 
 	function handleEditorDescriptionInput(event: Event) {
+		if (!canEdit) return;
 		const context = getSelectedCardContext();
 		if (!context) return;
 
@@ -724,6 +788,7 @@
 	}
 
 	async function handleEditorDescriptionBlur() {
+		if (!canEdit) return;
 		const context = getSelectedCardContext();
 		if (!context) return;
 
@@ -731,11 +796,13 @@
 	}
 
 	function handleEditorDueDateInput(event: Event) {
+		if (!canEdit) return;
 		const target = event.currentTarget as HTMLInputElement;
 		editorDueDate = target.value;
 	}
 
 	async function saveEditorDueDate() {
+		if (!canEdit) return;
 		const context = getSelectedCardContext();
 		if (!context) return;
 
@@ -744,6 +811,7 @@
 	}
 
 	async function clearEditorDueDate() {
+		if (!canEdit) return;
 		const context = getSelectedCardContext();
 		if (!context) return;
 
@@ -753,6 +821,7 @@
 	}
 
 	async function addEditorAssignee() {
+		if (!canEdit) return;
 		const assignee = editorNewAssignee.trim();
 		if (!assignee) return;
 
@@ -774,6 +843,7 @@
 	}
 
 	async function removeEditorAssignee(assignee: string) {
+		if (!canEdit) return;
 		const context = getSelectedCardContext();
 		if (!context) return;
 
@@ -782,6 +852,7 @@
 	}
 
 	async function addEditorTag() {
+		if (!canEdit) return;
 		const tag = editorNewTag.trim();
 		if (!tag) return;
 
@@ -800,7 +871,7 @@
 			const res = await fetch('/api/tags', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ cardId: context.card.uuid, name: tag })
+				body: JSON.stringify({ cardId: context.card.uuid, name: tag, userId: currentUserId })
 			});
 
 			if (!res.ok) {
@@ -814,6 +885,7 @@
 	}
 
 	async function removeEditorTag(tag: string) {
+		if (!canEdit) return;
 		const context = getSelectedCardContext();
 		if (!context || !context.card.uuid) return;
 
@@ -823,7 +895,7 @@
 			const res = await fetch('/api/tags', {
 				method: 'DELETE',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ cardId: context.card.uuid, name: tag })
+				body: JSON.stringify({ cardId: context.card.uuid, name: tag, userId: currentUserId })
 			});
 
 			if (!res.ok) {
@@ -849,9 +921,10 @@
 				type="text"
 				bind:value={board_name}
 				placeholder="Board name..."
+				readonly={!canManage}
 				onblur={persistBoardName}
 			/>
-			{#if boardId}
+			{#if boardId && canManage}
 				<a
 					href={`/b/${boardId}/settings`}
 					class="rounded-md border border-sky-300/25 bg-slate-700/75 px-3 py-2 text-sm font-semibold text-slate-100 transition-colors hover:bg-slate-600/90"
@@ -860,6 +933,24 @@
 				</a>
 			{/if}
 		</div>
+		{#if inviteMessage}
+			<p
+				class="mb-3 rounded-md border border-emerald-300/30 bg-emerald-500/15 px-3 py-2 text-sm text-emerald-100"
+			>
+				{inviteMessage}
+			</p>
+		{/if}
+		{#if loadError}
+			<p
+				class="mb-3 rounded-md border border-rose-300/30 bg-rose-500/15 px-3 py-2 text-sm text-rose-100"
+			>
+				{loadError}
+			</p>
+		{/if}
+		<p class="mb-1 px-2 text-xs uppercase tracking-wider text-slate-300">
+			Role: {boardRole ?? 'unknown'}
+			{canEdit ? '(editor access)' : '(read only)'}
+		</p>
 
 		<div class="flex gap-3 overflow-x-auto px-2 py-3">
 			{#each lists as list, i}
@@ -875,7 +966,7 @@
 				<div
 					class="group/list relative flex min-w-[220px] flex-col rounded-xl border border-sky-300/20 bg-slate-800/70 p-3 text-slate-100 shadow-md shadow-slate-950/50 backdrop-blur-sm"
 					role="group"
-					draggable="true"
+					draggable={canEdit}
 					ondragstart={(event) => handleListDragStart(i, event)}
 					ondragend={handleListDragEnd}
 					ondragover={(event) => handleListDragOver(i, event)}
@@ -885,18 +976,21 @@
 						<input
 							class="w-full flex-1 rounded-md border-0 bg-transparent px-1 py-1 font-mono text-lg font-bold text-slate-100 transition-colors hover:bg-slate-700/50"
 							value={list.name}
+							readonly={!canEdit}
 							oninput={(e) => updateListName(i, e)}
 						/>
-						<div class="group/list-corner relative h-8 w-8 shrink-0">
-							<button
-								type="button"
-								title="Delete list"
-								class="pointer-events-none absolute right-0 top-0 h-8 w-8 cursor-pointer rounded-full border border-rose-300/20 bg-slate-800/90 text-center text-sm font-bold text-rose-200 opacity-0 shadow-sm shadow-black/30 transition-all group-hover/list-corner:pointer-events-auto group-hover/list-corner:opacity-100 hover:border-rose-300/60 hover:bg-rose-500/20 hover:text-rose-100"
-								onclick={() => deleteList(i)}
-							>
-								✕
-							</button>
-						</div>
+						{#if canEdit}
+							<div class="group/list-corner relative h-8 w-8 shrink-0">
+								<button
+									type="button"
+									title="Delete list"
+									class="pointer-events-none absolute right-0 top-0 h-8 w-8 cursor-pointer rounded-full border border-rose-300/20 bg-slate-800/90 text-center text-sm font-bold text-rose-200 opacity-0 shadow-sm shadow-black/30 transition-all group-hover/list-corner:pointer-events-auto group-hover/list-corner:opacity-100 hover:border-rose-300/60 hover:bg-rose-500/20 hover:text-rose-100"
+									onclick={() => deleteList(i)}
+								>
+									✕
+								</button>
+							</div>
+						{/if}
 					</div>
 
 					<ol
@@ -924,6 +1018,7 @@
 							{/if}
 							<Card
 								{card}
+								{canEdit}
 								listIndex={i}
 								cardIndex={j}
 								on:updateCompleted={handleUpdateCompleted}
@@ -964,10 +1059,12 @@
 							class="w-full rounded-md border border-slate-600/60 bg-slate-700/80 p-1.5 font-mono text-sm text-slate-100 shadow-sm shadow-black/20 placeholder:text-slate-300"
 							placeholder="New card title..."
 							value={list.newCardTitle}
+							disabled={!canEdit}
 							oninput={(e) => updateListNewCardTitle(i, e)}
 						/>
 						<button
 							type="submit"
+							disabled={!canEdit}
 							class="w-20 cursor-pointer rounded-md bg-sky-600 px-2 text-sm font-semibold text-white shadow-sm shadow-sky-900/50 transition-colors hover:bg-sky-500"
 						>
 							+ Add
@@ -985,30 +1082,32 @@
 				></div>
 			{/if}
 
-			<div
-				class="min-w-[220px] rounded-xl border border-dashed border-sky-300/35 bg-slate-800/55 p-3 text-slate-100 shadow-md shadow-slate-950/40 backdrop-blur-sm"
-			>
-				<form
-					onsubmit={(event) => {
-						event.preventDefault();
-						addList();
-					}}
-					class="flex flex-col gap-2"
+			{#if canEdit}
+				<div
+					class="min-w-[220px] rounded-xl border border-dashed border-sky-300/35 bg-slate-800/55 p-3 text-slate-100 shadow-md shadow-slate-950/40 backdrop-blur-sm"
 				>
-					<input
-						type="text"
-						class="w-full rounded-md border border-slate-600/60 bg-slate-700/80 p-1.5 font-mono text-sm text-slate-100 shadow-sm shadow-black/20 placeholder:text-slate-300 h-9"
-						placeholder="New list name..."
-						bind:value={newListName}
-					/>
-					<button
-						type="submit"
-						class="h-9 hover:cursor-pointer w-full rounded-md bg-sky-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm shadow-sky-900/50 transition-colors hover:bg-sky-500"
+					<form
+						onsubmit={(event) => {
+							event.preventDefault();
+							addList();
+						}}
+						class="flex flex-col gap-2"
 					>
-						+ Add List
-					</button>
-				</form>
-			</div>
+						<input
+							type="text"
+							class="h-9 w-full rounded-md border border-slate-600/60 bg-slate-700/80 p-1.5 font-mono text-sm text-slate-100 shadow-sm shadow-black/20 placeholder:text-slate-300"
+							placeholder="New list name..."
+							bind:value={newListName}
+						/>
+						<button
+							type="submit"
+							class="h-9 w-full rounded-md bg-sky-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm shadow-sky-900/50 transition-colors hover:cursor-pointer hover:bg-sky-500"
+						>
+							+ Add List
+						</button>
+					</form>
+				</div>
+			{/if}
 		</div>
 	</div>
 	{#if selectedCard && selectedList}
@@ -1021,6 +1120,7 @@
 						type="text"
 						class="min-w-0 flex-1 rounded-md border border-slate-600 bg-slate-800/80 px-2 py-1 text-lg font-bold text-slate-100 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none"
 						value={selectedCard.title}
+						readonly={!canEdit}
 						oninput={handleEditorTitleInput}
 						onblur={handleEditorTitleBlur}
 					/>
@@ -1045,6 +1145,7 @@
 							class="min-h-28 w-full rounded-md border border-slate-600 bg-slate-800/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none"
 							placeholder="Write a description..."
 							value={editorDescription}
+							readonly={!canEdit}
 							oninput={handleEditorDescriptionInput}
 							onblur={handleEditorDescriptionBlur}
 						></textarea>
@@ -1061,14 +1162,16 @@
 										class="inline-flex items-center gap-1 rounded-md bg-slate-700/90 px-2 py-1 text-xs text-slate-100 ring-1 ring-slate-500"
 									>
 										{assignee}
-										<button
-											type="button"
-											class="cursor-pointer rounded px-1 text-slate-300 shadow-sm shadow-slate-950/60 transition-all hover:bg-rose-500/25 hover:text-rose-200 active:translate-y-px"
-											onclick={() => removeEditorAssignee(assignee)}
-											title="Remove assignee"
-										>
-											✕
-										</button>
+										{#if canEdit}
+											<button
+												type="button"
+												class="cursor-pointer rounded px-1 text-slate-300 shadow-sm shadow-slate-950/60 transition-all hover:bg-rose-500/25 hover:text-rose-200 active:translate-y-px"
+												onclick={() => removeEditorAssignee(assignee)}
+												title="Remove assignee"
+											>
+												✕
+											</button>
+										{/if}
 									</span>
 								{/each}
 							{:else}
@@ -1086,10 +1189,12 @@
 								type="text"
 								class="min-w-0 flex-1 rounded-md border border-slate-600 bg-slate-800/80 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none"
 								placeholder="Add assignee..."
+								disabled={!canEdit}
 								bind:value={editorNewAssignee}
 							/>
 							<button
 								type="submit"
+								disabled={!canEdit}
 								class="h-8 w-16 min-w-[4rem] shrink-0 cursor-pointer whitespace-nowrap rounded-md bg-sky-600 px-2 py-1 text-center text-xs font-semibold text-white shadow-md shadow-sky-900/50 transition-all hover:bg-sky-500 active:translate-y-px"
 							>
 								+ Add
@@ -1107,14 +1212,16 @@
 									class="inline-flex items-center gap-1 rounded-md bg-slate-700/90 px-2 py-1 text-xs text-slate-100 ring-1 ring-slate-500"
 								>
 									{selectedCard.dueDate}
-									<button
-										type="button"
-										class="cursor-pointer rounded px-1 text-slate-300 shadow-sm shadow-slate-950/60 transition-all hover:bg-rose-500/25 hover:text-rose-200 active:translate-y-px"
-										onclick={clearEditorDueDate}
-										title="Clear due date"
-									>
-										✕
-									</button>
+									{#if canEdit}
+										<button
+											type="button"
+											class="cursor-pointer rounded px-1 text-slate-300 shadow-sm shadow-slate-950/60 transition-all hover:bg-rose-500/25 hover:text-rose-200 active:translate-y-px"
+											onclick={clearEditorDueDate}
+											title="Clear due date"
+										>
+											✕
+										</button>
+									{/if}
 								</span>
 							{:else}
 								<p class="text-xs text-slate-400">No due date.</p>
@@ -1131,10 +1238,12 @@
 								type="date"
 								class="min-w-0 flex-1 appearance-none rounded-md border border-slate-600 bg-slate-800/80 px-2 py-1 text-sm text-slate-100 focus:border-sky-400 focus:outline-none [color-scheme:dark] [&::-webkit-calendar-picker-indicator]:m-0 [&::-webkit-calendar-picker-indicator]:h-0 [&::-webkit-calendar-picker-indicator]:w-0 [&::-webkit-calendar-picker-indicator]:opacity-0"
 								value={editorDueDate}
+								disabled={!canEdit}
 								oninput={handleEditorDueDateInput}
 							/>
 							<button
 								type="submit"
+								disabled={!canEdit}
 								class="h-8 w-16 min-w-[4rem] shrink-0 cursor-pointer whitespace-nowrap rounded-md bg-sky-600 px-2 py-1 text-center text-xs font-semibold text-white shadow-md shadow-sky-900/50 transition-all hover:bg-sky-500 active:translate-y-px"
 							>
 								Set
@@ -1151,14 +1260,16 @@
 										class="inline-flex items-center gap-1 rounded-md bg-sky-500/20 px-2 py-1 text-xs text-sky-100 ring-1 ring-sky-300/30"
 									>
 										{tag}
-										<button
-											type="button"
-											class="cursor-pointer rounded px-1 text-sky-200 shadow-sm shadow-slate-950/60 transition-all hover:bg-rose-500/25 hover:text-rose-200 active:translate-y-px"
-											onclick={() => removeEditorTag(tag)}
-											title="Remove tag"
-										>
-											✕
-										</button>
+										{#if canEdit}
+											<button
+												type="button"
+												class="cursor-pointer rounded px-1 text-sky-200 shadow-sm shadow-slate-950/60 transition-all hover:bg-rose-500/25 hover:text-rose-200 active:translate-y-px"
+												onclick={() => removeEditorTag(tag)}
+												title="Remove tag"
+											>
+												✕
+											</button>
+										{/if}
 									</span>
 								{/each}
 							{:else}
@@ -1176,10 +1287,12 @@
 								type="text"
 								class="w-full rounded-md border border-slate-600 bg-slate-800/80 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none"
 								placeholder="Add tag..."
+								disabled={!canEdit}
 								bind:value={editorNewTag}
 							/>
 							<button
 								type="submit"
+								disabled={!canEdit}
 								class="h-8 w-16 min-w-[4rem] shrink-0 cursor-pointer whitespace-nowrap rounded-md bg-sky-600 px-2 py-1 text-center text-xs font-semibold text-white shadow-md shadow-sky-900/50 transition-all hover:bg-sky-500 active:translate-y-px"
 							>
 								+ Add
