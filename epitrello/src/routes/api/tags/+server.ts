@@ -2,6 +2,7 @@ import type { RequestHandler } from './$types';
 import { json, error } from '@sveltejs/kit';
 import { TagConnector, rdb, type UUID } from '$lib/server/redisConnector';
 import { getBoardIdFromCard, requireBoardAccess } from '$lib/server/boardAccess';
+import { notifyBoardUpdated } from '$lib/server/boardEvents';
 
 export const POST: RequestHandler = async ({ request }) => {
 	const { cardId, name, userId } = await request.json();
@@ -10,8 +11,9 @@ export const POST: RequestHandler = async ({ request }) => {
 		throw error(400, 'cardId and name required');
 	}
 
+	const boardId = await getBoardIdFromCard(String(cardId));
+
 	if (userId) {
-		const boardId = await getBoardIdFromCard(String(cardId));
 		if (!boardId) {
 			throw error(404, 'Card not found');
 		}
@@ -23,6 +25,9 @@ export const POST: RequestHandler = async ({ request }) => {
 		const tagId = await TagConnector.create(cardId as UUID, name, 'label', 'gray');
 
 		await rdb.sadd(`card:${cardId}:tags`, tagId);
+		if (boardId) {
+			notifyBoardUpdated({ boardId, actorId: userId, source: 'tag' });
+		}
 
 		return json({ id: tagId, name });
 	} catch (err) {
@@ -48,8 +53,9 @@ export const DELETE: RequestHandler = async ({ request }) => {
 		throw error(400, 'cardId and name required');
 	}
 
+	const boardId = await getBoardIdFromCard(cardId);
+
 	if (userId) {
-		const boardId = await getBoardIdFromCard(cardId);
 		if (!boardId) {
 			throw error(404, 'Card not found');
 		}
@@ -67,6 +73,9 @@ export const DELETE: RequestHandler = async ({ request }) => {
 				await rdb.srem(`card:${cardId}:tags`, tagId);
 				await rdb.del(`tag:${tagId}`);
 			}
+		}
+		if (boardId) {
+			notifyBoardUpdated({ boardId, actorId: userId, source: 'tag' });
 		}
 
 		return json({ ok: true });

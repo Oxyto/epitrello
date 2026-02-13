@@ -6,6 +6,7 @@ import {
 	getBoardIdFromList,
 	requireBoardAccess
 } from '$lib/server/boardAccess';
+import { notifyBoardUpdated } from '$lib/server/boardEvents';
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(value, max));
 
@@ -75,8 +76,9 @@ export const POST: RequestHandler = async ({ request }) => {
 		throw error(400, 'listId and title required');
 	}
 
+	const boardId = await getBoardIdFromList(String(listId));
+
 	if (userId) {
-		const boardId = await getBoardIdFromList(String(listId));
 		if (!boardId) {
 			throw error(404, 'List not found');
 		}
@@ -93,6 +95,9 @@ export const POST: RequestHandler = async ({ request }) => {
 			list: String(listId),
 			order: currentCardIds.length
 		});
+		if (boardId) {
+			notifyBoardUpdated({ boardId, actorId: userId, source: 'card' });
+		}
 
 		return json({ id: cardId, title });
 	} catch (err) {
@@ -130,10 +135,12 @@ export const PATCH: RequestHandler = async ({ request }) => {
 		throw error(400, 'cardId required');
 	}
 
+	const boardId =
+		(await getBoardIdFromCard(cardId)) ??
+		(fromListId ? await getBoardIdFromList(fromListId) : null) ??
+		(toListId ? await getBoardIdFromList(toListId) : null);
+
 	if (userId) {
-		const boardId =
-			(await getBoardIdFromCard(cardId)) ??
-			(fromListId ? await getBoardIdFromList(fromListId) : null);
 		if (!boardId) {
 			throw error(404, 'Card not found');
 		}
@@ -175,6 +182,9 @@ export const PATCH: RequestHandler = async ({ request }) => {
 		await rdb.sadd(`list:${toListId}:cards`, cardId);
 		await rdb.hset(`card:${cardId}`, { list: toListId });
 	}
+	if (boardId) {
+		notifyBoardUpdated({ boardId, actorId: userId, source: 'card' });
+	}
 
 	return json({ ok: true });
 };
@@ -198,8 +208,9 @@ export const DELETE: RequestHandler = async ({ url, request }) => {
 		throw error(400, 'cardId required');
 	}
 
+	const boardId = await getBoardIdFromCard(id);
+
 	if (userId) {
-		const boardId = await getBoardIdFromCard(id);
 		if (!boardId) {
 			throw error(404, 'Card not found');
 		}
@@ -209,6 +220,9 @@ export const DELETE: RequestHandler = async ({ url, request }) => {
 
 	try {
 		await CardConnector.del(id as UUID);
+		if (boardId) {
+			notifyBoardUpdated({ boardId, actorId: userId, source: 'card' });
+		}
 		return json({ ok: true });
 	} catch (e) {
 		console.error('Erreur delete card', e);

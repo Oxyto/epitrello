@@ -33,6 +33,7 @@ const state = {
 	boardsGetCalls: [] as string[],
 	boardsDelCalls: [] as string[],
 	rdbHsetCalls: [] as Array<{ key: string; values: unknown }>,
+	rdbPublishCalls: [] as Array<{ channel: string; message: string }>,
 	rdbSaddCalls: [] as Array<{ key: string; value: string }>,
 	rdbSremCalls: [] as Array<{ key: string; value: string }>,
 	rdbSmembersCalls: [] as string[],
@@ -75,6 +76,10 @@ const rdb = {
 	},
 	hset: async (key: string, values: unknown) => {
 		state.rdbHsetCalls.push({ key, values });
+		return 1;
+	},
+	publish: async (channel: string, message: string) => {
+		state.rdbPublishCalls.push({ channel, message });
 		return 1;
 	},
 	sadd: async (key: string, value: string) => {
@@ -240,6 +245,7 @@ beforeEach(() => {
 	state.boardsGetCalls.length = 0;
 	state.boardsDelCalls.length = 0;
 	state.rdbHsetCalls.length = 0;
+	state.rdbPublishCalls.length = 0;
 	state.rdbSaddCalls.length = 0;
 	state.rdbSremCalls.length = 0;
 	state.rdbSmembersCalls.length = 0;

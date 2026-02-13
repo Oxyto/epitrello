@@ -4,6 +4,7 @@ import { rdb } from '$lib/server/redisConnector';
 import type { UUID } from 'crypto';
 import { UserConnector, BoardConnector } from '$lib/server/redisConnector';
 import { requireBoardAccess } from '$lib/server/boardAccess';
+import { notifyBoardUpdated } from '$lib/server/boardEvents';
 
 export const POST: RequestHandler = async ({ request }) => {
 	const body = await request.json().catch(() => null);
@@ -58,6 +59,7 @@ export const PATCH: RequestHandler = async ({ request }) => {
 	});
 
 	await rdb.hset(`board:${boardId}`, { name });
+	notifyBoardUpdated({ boardId: String(boardId), actorId: userId, source: 'board' });
 
 	return json({ ok: true });
 };

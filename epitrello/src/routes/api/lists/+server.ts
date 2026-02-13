@@ -2,6 +2,7 @@ import type { RequestHandler } from './$types';
 import { json, error } from '@sveltejs/kit';
 import { ListConnector, rdb, type UUID } from '$lib/server/redisConnector';
 import { getBoardIdFromList, requireBoardAccess } from '$lib/server/boardAccess';
+import { notifyBoardUpdated } from '$lib/server/boardEvents';
 
 export const POST: RequestHandler = async ({ request }) => {
 	const { boardId, name, userId } = await request.json();
@@ -17,6 +18,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	try {
 		const listId = await ListConnector.create(boardId as UUID, name);
 		await rdb.sadd(`board:${boardId}:lists`, listId);
+		notifyBoardUpdated({ boardId: String(boardId), actorId: userId, source: 'list' });
 
 		return json({ id: listId, name });
 	} catch (err) {
@@ -31,8 +33,9 @@ export const PATCH: RequestHandler = async ({ request }) => {
 		throw error(400, 'listId required');
 	}
 
+	const boardId = await getBoardIdFromList(String(listId));
+
 	if (userId) {
-		const boardId = await getBoardIdFromList(String(listId));
 		if (!boardId) {
 			throw error(404, 'List not found');
 		}
@@ -53,6 +56,9 @@ export const PATCH: RequestHandler = async ({ request }) => {
 	}
 
 	await rdb.hset(`list:${listId}`, updates);
+	if (boardId) {
+		notifyBoardUpdated({ boardId, actorId: userId, source: 'list' });
+	}
 
 	return json({ ok: true });
 };
@@ -64,8 +70,9 @@ export const DELETE: RequestHandler = async ({ url }) => {
 		throw error(400, 'id required');
 	}
 
+	const boardId = await getBoardIdFromList(id);
+
 	if (userId) {
-		const boardId = await getBoardIdFromList(id);
 		if (!boardId) {
 			throw error(404, 'List not found');
 		}
@@ -75,6 +82,9 @@ export const DELETE: RequestHandler = async ({ url }) => {
 
 	try {
 		await ListConnector.del(id as UUID);
+		if (boardId) {
+			notifyBoardUpdated({ boardId, actorId: userId, source: 'list' });
+		}
 		return json({ ok: true });
 	} catch (err) {
 		console.error('delete list failed', err);

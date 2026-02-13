@@ -46,6 +46,11 @@
 			}>;
 		}>;
 	};
+
+	type BoardUpdatedRealtimeEvent = {
+		actorId?: string | null;
+	};
+
 	const { data } = $props<{
 		data: {
 			board: { id: string; name: string } | undefined;
@@ -75,6 +80,10 @@
 	let editorDueDate = $state('');
 	let editorNewTag = $state('');
 	let editorNewAssignee = $state('');
+	let boardEventsSource = $state<EventSource | null>(null);
+	let realtimeReloadTimer = $state<ReturnType<typeof setTimeout> | null>(null);
+	let realtimeReloadInFlight = $state(false);
+	let realtimeReloadQueued = $state(false);
 
 	const selectedList = $derived<UiList | null>(
 		selectedCardRef && lists[selectedCardRef.listIndex] ? lists[selectedCardRef.listIndex] : null
@@ -88,6 +97,13 @@
 
 	function applyLoadedState(payload: BoardFullResponse) {
 		if (!payload || !payload.board) return;
+
+		const selectedUuid =
+			selectedCardRef &&
+			lists[selectedCardRef.listIndex] &&
+			lists[selectedCardRef.listIndex].cards[selectedCardRef.cardIndex]
+				? lists[selectedCardRef.listIndex].cards[selectedCardRef.cardIndex].uuid
+				: null;
 
 		board_name = payload.board.name ?? board_name;
 		boardRole = payload.board.role;
@@ -113,6 +129,29 @@
 
 		nextLocalCardId = localId;
 		lists = mapped;
+
+		if (!selectedUuid) {
+			return;
+		}
+
+		let restoredRef: { listIndex: number; cardIndex: number } | null = null;
+		for (let listIndex = 0; listIndex < mapped.length; listIndex += 1) {
+			const cardIndex = mapped[listIndex].cards.findIndex((card) => card.uuid === selectedUuid);
+			if (cardIndex >= 0) {
+				restoredRef = { listIndex, cardIndex };
+				break;
+			}
+		}
+
+		if (!restoredRef) {
+			closeDetails();
+			return;
+		}
+
+		selectedCardRef = restoredRef;
+		const restoredCard = mapped[restoredRef.listIndex].cards[restoredRef.cardIndex];
+		editorDescription = restoredCard.description ?? '';
+		editorDueDate = restoredCard.dueDate ?? '';
 	}
 
 	async function loadBoardFull() {
@@ -169,43 +208,132 @@
 		}
 	}
 
-	onMount(async () => {
-		if (!browser) {
-			ready = true;
+	function stopRealtimeSync() {
+		if (boardEventsSource) {
+			boardEventsSource.close();
+			boardEventsSource = null;
+		}
+		if (realtimeReloadTimer) {
+			clearTimeout(realtimeReloadTimer);
+			realtimeReloadTimer = null;
+		}
+		realtimeReloadInFlight = false;
+		realtimeReloadQueued = false;
+	}
+
+	async function runRealtimeReload() {
+		if (realtimeReloadInFlight) {
+			realtimeReloadQueued = true;
 			return;
 		}
 
-		const raw = localStorage.getItem('user');
-		if (!raw) {
-			goto('/login');
-			return;
-		}
-
-		let currentUser: { id?: string } | null = null;
+		realtimeReloadInFlight = true;
 		try {
-			currentUser = JSON.parse(raw);
-		} catch {
-			localStorage.removeItem('user');
-			localStorage.removeItem('authToken');
-			goto('/login');
+			await loadBoardFull();
+		} finally {
+			realtimeReloadInFlight = false;
+			if (realtimeReloadQueued) {
+				realtimeReloadQueued = false;
+				void runRealtimeReload();
+			}
+		}
+	}
+
+	function scheduleRealtimeReload(delayMs = 120) {
+		if (realtimeReloadTimer) {
+			clearTimeout(realtimeReloadTimer);
+		}
+
+		realtimeReloadTimer = setTimeout(() => {
+			realtimeReloadTimer = null;
+			void runRealtimeReload();
+		}, delayMs);
+	}
+
+	function startRealtimeSync() {
+		if (!browser || !boardId || !currentUserId) {
 			return;
 		}
 
-		if (!currentUser?.id) {
-			goto('/login');
-			return;
-		}
+		stopRealtimeSync();
 
-		currentUserId = currentUser.id;
-		board_name = data.board?.name ?? board_name;
+		const params = new URLSearchParams({
+			boardId,
+			userId: currentUserId
+		});
+		const source = new EventSource(`/api/board-events?${params.toString()}`);
+		boardEventsSource = source;
 
-		const inviteToken = new URL(window.location.href).searchParams.get('invite') ?? '';
-		if (inviteToken) {
-			await tryJoinWithInvite(inviteToken);
-		}
+		source.addEventListener('board-updated', (event: Event) => {
+			let actorId: string | null = null;
+			try {
+				const payload = JSON.parse((event as MessageEvent).data) as BoardUpdatedRealtimeEvent;
+				if (typeof payload.actorId === 'string') {
+					actorId = payload.actorId;
+				}
+			} catch {}
 
-		await loadBoardFull();
-		ready = true;
+			if (actorId && actorId === currentUserId) {
+				return;
+			}
+
+			scheduleRealtimeReload();
+		});
+	}
+
+	onMount(() => {
+		let cancelled = false;
+
+		const bootstrap = async () => {
+			if (!browser) {
+				ready = true;
+				return;
+			}
+
+			const raw = localStorage.getItem('user');
+			if (!raw) {
+				goto('/login');
+				return;
+			}
+
+			let currentUser: { id?: string } | null = null;
+			try {
+				currentUser = JSON.parse(raw);
+			} catch {
+				localStorage.removeItem('user');
+				localStorage.removeItem('authToken');
+				goto('/login');
+				return;
+			}
+
+			if (!currentUser?.id) {
+				goto('/login');
+				return;
+			}
+
+			currentUserId = currentUser.id;
+			board_name = data.board?.name ?? board_name;
+
+			const inviteToken = new URL(window.location.href).searchParams.get('invite') ?? '';
+			if (inviteToken) {
+				await tryJoinWithInvite(inviteToken);
+			}
+
+			await loadBoardFull();
+			if (cancelled) {
+				return;
+			}
+
+			startRealtimeSync();
+			ready = true;
+		};
+
+		void bootstrap();
+
+		return () => {
+			cancelled = true;
+			stopRealtimeSync();
+		};
 	});
 
 	async function addList() {
