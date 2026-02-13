@@ -37,7 +37,7 @@ export const POST: RequestHandler = async ({ request }) => {
 };
 
 export const DELETE: RequestHandler = async ({ request }) => {
-	let body: any;
+	let body: unknown;
 
 	try {
 		body = await request.json();
@@ -45,9 +45,10 @@ export const DELETE: RequestHandler = async ({ request }) => {
 		throw error(400, 'JSON body required');
 	}
 
-	const cardId = body?.cardId as string | undefined;
-	const name = body?.name as string | undefined;
-	const userId = body?.userId as string | undefined;
+	const parsedBody = body as { cardId?: string; name?: string; userId?: string } | null;
+	const cardId = parsedBody?.cardId;
+	const name = parsedBody?.name;
+	const userId = parsedBody?.userId;
 
 	if (!cardId || !name) {
 		throw error(400, 'cardId and name required');

@@ -120,7 +120,7 @@
 
 	{#if card.tags && card.tags.length}
 		<div class="mb-1 flex flex-wrap gap-1 px-1">
-			{#each card.tags as tag}
+			{#each card.tags as tag, index (`${tag}-${index}`)}
 				<span
 					class="inline-flex select-none items-center rounded-md bg-white/20 px-2 py-0.5 text-[11px] font-semibold text-slate-50 shadow-sm"
 				>
@@ -136,7 +136,7 @@
 				<span class="rounded-md bg-black/20 px-2 py-0.5 text-sky-100">Due {card.dueDate}</span>
 			{/if}
 			{#if card.assignees && card.assignees.length}
-				{#each card.assignees as assignee}
+				{#each card.assignees as assignee, index (`${assignee}-${index}`)}
 					<span class="rounded-md bg-white/15 px-2 py-0.5 text-slate-100">@{assignee}</span>
 				{/each}
 			{/if}

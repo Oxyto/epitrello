@@ -247,8 +247,9 @@ const expectHttpErrorStatus = async (
 	try {
 		await maybePromise;
 		throw new Error('Expected handler to throw an HttpError');
-	} catch (error: any) {
-		expect(error?.status).toBe(status);
+	} catch (error: unknown) {
+		const maybeHttpError = error as { status?: number } | null;
+		expect(maybeHttpError?.status).toBe(status);
 	}
 };
 
@@ -305,7 +306,7 @@ describe('api/board-state +server', () => {
 		await expectHttpErrorStatus(
 			boardStateRoute.GET({
 				url: new URL('http://localhost/api/board-state')
-			} as any),
+			} as never),
 			400
 		);
 		expect(state.boardStateGetCalls).toHaveLength(0);
@@ -314,7 +315,7 @@ describe('api/board-state +server', () => {
 	it('GET returns 404 JSON when no board state is stored', async () => {
 		const response = await boardStateRoute.GET({
 			url: new URL('http://localhost/api/board-state?boardId=board-1')
-		} as any);
+		} as never);
 
 		expect(response.status).toBe(404);
 		expect(await response.json()).toEqual({ message: 'Not found' });
@@ -329,7 +330,7 @@ describe('api/board-state +server', () => {
 
 		const response = await boardStateRoute.GET({
 			url: new URL('http://localhost/api/board-state?boardId=board-1')
-		} as any);
+		} as never);
 
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({
@@ -344,7 +345,7 @@ describe('api/board-state +server', () => {
 		await expectHttpErrorStatus(
 			boardStateRoute.GET({
 				url: new URL('http://localhost/api/board-state?boardId=board-1')
-			} as any),
+			} as never),
 			500
 		);
 	});
@@ -356,7 +357,7 @@ describe('api/board-state +server', () => {
 					method: 'POST',
 					body: JSON.stringify({ board_name: 'Roadmap' })
 				})
-			} as any),
+			} as never),
 			400
 		);
 		expect(state.boardStateSetCalls).toHaveLength(0);
@@ -372,7 +373,7 @@ describe('api/board-state +server', () => {
 					lists: 'not-an-array'
 				})
 			})
-		} as any);
+		} as never);
 
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({ ok: true });
@@ -395,7 +396,7 @@ describe('api/boards +server', () => {
 				method: 'POST',
 				body: JSON.stringify({})
 			})
-		} as any);
+		} as never);
 
 		expect(response.status).toBe(400);
 		expect(await response.json()).toEqual({ error: 'ownerId et name sont requis' });
@@ -411,7 +412,7 @@ describe('api/boards +server', () => {
 				method: 'POST',
 				body: JSON.stringify({ ownerId: 'missing-user', name: 'Roadmap' })
 			})
-		} as any);
+		} as never);
 
 		expect(response.status).toBe(404);
 		expect(await response.json()).toEqual({ error: 'Utilisateur introuvable' });
@@ -427,7 +428,7 @@ describe('api/boards +server', () => {
 				method: 'POST',
 				body: JSON.stringify({ ownerId: 'user-1', name: '  Sprint board  ' })
 			})
-		} as any);
+		} as never);
 
 		expect(response.status).toBe(201);
 		expect(await response.json()).toEqual({
@@ -445,7 +446,7 @@ describe('api/boards +server', () => {
 				method: 'PATCH',
 				body: JSON.stringify({ boardId: 'board-1', name: 'Renamed board' })
 			})
-		} as any);
+		} as never);
 
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({ ok: true });
@@ -464,7 +465,7 @@ describe('api/boards +server', () => {
 					method: 'PATCH',
 					body: JSON.stringify({ boardId: 'board-1' })
 				})
-			} as any),
+			} as never),
 			400
 		);
 		expect(state.rdbHsetCalls).toHaveLength(0);
@@ -473,7 +474,7 @@ describe('api/boards +server', () => {
 	it('DELETE calls BoardConnector.del and returns ok', async () => {
 		const response = await boardsRoute.DELETE({
 			url: new URL('http://localhost/api/boards?id=board-99')
-		} as any);
+		} as never);
 
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({ ok: true });
@@ -489,7 +490,7 @@ describe('api/lists +server', () => {
 					method: 'POST',
 					body: JSON.stringify({})
 				})
-			} as any),
+			} as never),
 			400
 		);
 		expect(state.listsCreateCalls).toHaveLength(0);
@@ -504,7 +505,7 @@ describe('api/lists +server', () => {
 				method: 'POST',
 				body: JSON.stringify({ boardId: 'board-1', name: 'Todo' })
 			})
-		} as any);
+		} as never);
 
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({ id: 'list-42', name: 'Todo' });
@@ -524,7 +525,7 @@ describe('api/lists +server', () => {
 					method: 'POST',
 					body: JSON.stringify({ boardId: 'board-1', name: 'Todo' })
 				})
-			} as any),
+			} as never),
 			500
 		);
 	});
@@ -535,7 +536,7 @@ describe('api/lists +server', () => {
 				method: 'PATCH',
 				body: JSON.stringify({ listId: 'list-1', name: 'Done' })
 			})
-		} as any);
+		} as never);
 
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({ ok: true });
@@ -548,7 +549,7 @@ describe('api/lists +server', () => {
 				method: 'PATCH',
 				body: JSON.stringify({ listId: 'list-1', order: 3 })
 			})
-		} as any);
+		} as never);
 
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({ ok: true });
@@ -562,7 +563,7 @@ describe('api/lists +server', () => {
 					method: 'PATCH',
 					body: JSON.stringify({ listId: 'list-1' })
 				})
-			} as any),
+			} as never),
 			400
 		);
 		expect(state.rdbHsetCalls).toHaveLength(0);
@@ -572,7 +573,7 @@ describe('api/lists +server', () => {
 		await expectHttpErrorStatus(
 			listsRoute.DELETE({
 				url: new URL('http://localhost/api/lists')
-			} as any),
+			} as never),
 			400
 		);
 		expect(state.listsDelCalls).toHaveLength(0);
@@ -581,7 +582,7 @@ describe('api/lists +server', () => {
 	it('DELETE removes list and returns ok', async () => {
 		const response = await listsRoute.DELETE({
 			url: new URL('http://localhost/api/lists?id=list-9')
-		} as any);
+		} as never);
 
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({ ok: true });
@@ -594,7 +595,7 @@ describe('api/lists +server', () => {
 		await expectHttpErrorStatus(
 			listsRoute.DELETE({
 				url: new URL('http://localhost/api/lists?id=list-9')
-			} as any),
+			} as never),
 			500
 		);
 	});
@@ -608,7 +609,7 @@ describe('api/cards +server', () => {
 					method: 'POST',
 					body: JSON.stringify({})
 				})
-			} as any),
+			} as never),
 			400
 		);
 		expect(state.cardsCreateCalls).toHaveLength(0);
@@ -623,7 +624,7 @@ describe('api/cards +server', () => {
 				method: 'POST',
 				body: JSON.stringify({ listId: 'list-3', title: 'Implement tests' })
 			})
-		} as any);
+		} as never);
 
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({ id: 'card-22', title: 'Implement tests' });
@@ -640,7 +641,7 @@ describe('api/cards +server', () => {
 					method: 'POST',
 					body: JSON.stringify({ listId: 'list-3', title: 'Implement tests' })
 				})
-			} as any),
+			} as never),
 			500
 		);
 	});
@@ -652,7 +653,7 @@ describe('api/cards +server', () => {
 					method: 'PATCH',
 					body: JSON.stringify({ name: 'Renamed card' })
 				})
-			} as any),
+			} as never),
 			400
 		);
 		expect(state.rdbHsetCalls).toHaveLength(0);
@@ -664,7 +665,7 @@ describe('api/cards +server', () => {
 				method: 'PATCH',
 				body: JSON.stringify({ cardId: 'card-1', name: 'Renamed card' })
 			})
-		} as any);
+		} as never);
 
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({ ok: true });
@@ -679,7 +680,7 @@ describe('api/cards +server', () => {
 				method: 'PATCH',
 				body: JSON.stringify({ cardId: 'card-1', completed: true })
 			})
-		} as any);
+		} as never);
 
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({ ok: true });
@@ -696,7 +697,7 @@ describe('api/cards +server', () => {
 					dueDate: '2026-02-20'
 				})
 			})
-		} as any);
+		} as never);
 
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({ ok: true });
@@ -715,7 +716,7 @@ describe('api/cards +server', () => {
 					assignees: [' Alice ', '', 'Bob']
 				})
 			})
-		} as any);
+		} as never);
 
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({ ok: true });
@@ -742,7 +743,7 @@ describe('api/cards +server', () => {
 					targetIndex: 1
 				})
 			})
-		} as any);
+		} as never);
 
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({ ok: true });
@@ -765,7 +766,7 @@ describe('api/cards +server', () => {
 					toListId: 'list-b'
 				})
 			})
-		} as any);
+		} as never);
 
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({ ok: true });
@@ -784,7 +785,7 @@ describe('api/cards +server', () => {
 					toListId: 'list-a'
 				})
 			})
-		} as any);
+		} as never);
 
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({ ok: true });
@@ -797,7 +798,7 @@ describe('api/cards +server', () => {
 		const response = await cardsRoute.DELETE({
 			url: new URL('http://localhost/api/cards?id=card-77'),
 			request: new Request('http://localhost/api/cards?id=card-77', { method: 'DELETE' })
-		} as any);
+		} as never);
 
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({ ok: true });
@@ -811,7 +812,7 @@ describe('api/cards +server', () => {
 				method: 'DELETE',
 				body: JSON.stringify({ cardId: 'card-12' })
 			})
-		} as any);
+		} as never);
 
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({ ok: true });
@@ -826,7 +827,7 @@ describe('api/cards +server', () => {
 					method: 'DELETE',
 					body: '{}'
 				})
-			} as any),
+			} as never),
 			400
 		);
 		expect(state.cardsDelCalls).toHaveLength(0);
@@ -839,7 +840,7 @@ describe('api/cards +server', () => {
 			cardsRoute.DELETE({
 				url: new URL('http://localhost/api/cards?id=card-77'),
 				request: new Request('http://localhost/api/cards?id=card-77', { method: 'DELETE' })
-			} as any),
+			} as never),
 			500
 		);
 	});
@@ -853,7 +854,7 @@ describe('api/tags +server', () => {
 					method: 'POST',
 					body: JSON.stringify({})
 				})
-			} as any),
+			} as never),
 			400
 		);
 		expect(state.tagsCreateCalls).toHaveLength(0);
@@ -868,7 +869,7 @@ describe('api/tags +server', () => {
 				method: 'POST',
 				body: JSON.stringify({ cardId: 'card-1', name: 'urgent' })
 			})
-		} as any);
+		} as never);
 
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({ id: 'tag-42', name: 'urgent' });
@@ -887,7 +888,7 @@ describe('api/tags +server', () => {
 					method: 'POST',
 					body: JSON.stringify({ cardId: 'card-1', name: 'urgent' })
 				})
-			} as any),
+			} as never),
 			500
 		);
 	});
@@ -899,7 +900,7 @@ describe('api/tags +server', () => {
 					method: 'DELETE',
 					body: 'not-json'
 				})
-			} as any),
+			} as never),
 			400
 		);
 	});
@@ -911,7 +912,7 @@ describe('api/tags +server', () => {
 					method: 'DELETE',
 					body: JSON.stringify({ cardId: 'card-1' })
 				})
-			} as any),
+			} as never),
 			400
 		);
 	});
@@ -927,7 +928,7 @@ describe('api/tags +server', () => {
 				method: 'DELETE',
 				body: JSON.stringify({ cardId: 'card-1', name: 'urgent' })
 			})
-		} as any);
+		} as never);
 
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({ ok: true });
@@ -947,7 +948,7 @@ describe('api/tags +server', () => {
 				method: 'DELETE',
 				body: JSON.stringify({ cardId: 'card-1', name: 'urgent' })
 			})
-		} as any);
+		} as never);
 
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({ ok: true });
@@ -964,7 +965,7 @@ describe('api/tags +server', () => {
 					method: 'DELETE',
 					body: JSON.stringify({ cardId: 'card-1', name: 'urgent' })
 				})
-			} as any),
+			} as never),
 			500
 		);
 	});
@@ -975,7 +976,7 @@ describe('api/board-full +server', () => {
 		await expectHttpErrorStatus(
 			boardFullRoute.GET({
 				url: new URL('http://localhost/api/board-full')
-			} as any),
+			} as never),
 			400
 		);
 		expect(state.getFullBoardCalls).toHaveLength(0);
@@ -985,7 +986,7 @@ describe('api/board-full +server', () => {
 		await expectHttpErrorStatus(
 			boardFullRoute.GET({
 				url: new URL('http://localhost/api/board-full?boardId=board-1')
-			} as any),
+			} as never),
 			400
 		);
 		expect(state.getFullBoardCalls).toHaveLength(0);
@@ -997,7 +998,7 @@ describe('api/board-full +server', () => {
 		await expectHttpErrorStatus(
 			boardFullRoute.GET({
 				url: new URL('http://localhost/api/board-full?boardId=board-404&userId=user-1')
-			} as any),
+			} as never),
 			404
 		);
 		expect(state.getFullBoardCalls).toEqual(['board-404']);
@@ -1030,7 +1031,7 @@ describe('api/board-full +server', () => {
 
 		const response = await boardFullRoute.GET({
 			url: new URL('http://localhost/api/board-full?boardId=board-1&userId=user-1')
-		} as any);
+		} as never);
 
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({
@@ -1084,7 +1085,7 @@ describe('api/users +server', () => {
 				method: 'PATCH',
 				body: JSON.stringify({ userId: 'user-1' })
 			})
-		} as any);
+		} as never);
 
 		expect(response.status).toBe(400);
 		expect(await response.json()).toEqual({
@@ -1103,7 +1104,7 @@ describe('api/users +server', () => {
 					displayName: 'Alice'
 				})
 			})
-		} as any);
+		} as never);
 
 		expect(response.status).toBe(403);
 		expect(await response.json()).toEqual({ error: 'Forbidden' });
@@ -1122,7 +1123,7 @@ describe('api/users +server', () => {
 					displayName: 'Alice'
 				})
 			})
-		} as any);
+		} as never);
 
 		expect(response.status).toBe(404);
 		expect(await response.json()).toEqual({ error: 'User not found' });
@@ -1139,7 +1140,7 @@ describe('api/users +server', () => {
 					displayName: '  Alice Cooper  '
 				})
 			})
-		} as any);
+		} as never);
 
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({ ok: true, name: 'Alice Cooper' });
@@ -1151,7 +1152,7 @@ describe('api/users +server', () => {
 	it('DELETE returns 400 when query parameters are missing', async () => {
 		const response = await usersRoute.DELETE({
 			url: new URL('http://localhost/api/users?id=user-1')
-		} as any);
+		} as never);
 
 		expect(response.status).toBe(400);
 		expect(await response.json()).toEqual({ error: 'id and requesterId are required' });
@@ -1161,7 +1162,7 @@ describe('api/users +server', () => {
 	it('DELETE returns 403 when requester does not match target user', async () => {
 		const response = await usersRoute.DELETE({
 			url: new URL('http://localhost/api/users?id=user-1&requesterId=user-2')
-		} as any);
+		} as never);
 
 		expect(response.status).toBe(403);
 		expect(await response.json()).toEqual({ error: 'Forbidden' });
@@ -1173,7 +1174,7 @@ describe('api/users +server', () => {
 
 		const response = await usersRoute.DELETE({
 			url: new URL('http://localhost/api/users?id=user-1&requesterId=user-1')
-		} as any);
+		} as never);
 
 		expect(response.status).toBe(404);
 		expect(await response.json()).toEqual({ error: 'User not found' });
@@ -1183,7 +1184,7 @@ describe('api/users +server', () => {
 	it('DELETE removes user account when requester matches', async () => {
 		const response = await usersRoute.DELETE({
 			url: new URL('http://localhost/api/users?id=user-1&requesterId=user-1')
-		} as any);
+		} as never);
 
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({ ok: true });
@@ -1198,7 +1199,7 @@ describe('api/login +server', () => {
 				method: 'POST',
 				body: JSON.stringify({})
 			})
-		} as any);
+		} as never);
 
 		expect(response.status).toBe(400);
 		expect(await response.json()).toEqual({ error: 'Email manquant' });
@@ -1218,7 +1219,7 @@ describe('api/login +server', () => {
 				method: 'POST',
 				body: JSON.stringify({ email: '  DEV@example.com  ' })
 			})
-		} as any);
+		} as never);
 
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({
@@ -1236,7 +1237,7 @@ describe('api/login +server', () => {
 				method: 'POST',
 				body: JSON.stringify({ email: '  New.User@Example.com  ' })
 			})
-		} as any);
+		} as never);
 
 		const payload = await response.json();
 
@@ -1267,7 +1268,7 @@ describe('api/login +server', () => {
 					name: 'Product Owner'
 				})
 			})
-		} as any);
+		} as never);
 
 		const payload = await response.json();
 

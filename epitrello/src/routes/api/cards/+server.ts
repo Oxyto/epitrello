@@ -201,7 +201,9 @@ export const DELETE: RequestHandler = async ({ url, request }) => {
 			if (!userId && body && typeof body.userId === 'string') {
 				userId = body.userId;
 			}
-		} catch {}
+		} catch (error) {
+			void error;
+		}
 	}
 
 	if (!id) {

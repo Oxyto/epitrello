@@ -2,7 +2,6 @@ import { redirect } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
 
-
 const clientId = env.GITHUB_CLIENT_ID;
 const redirectUri = 'http://localhost:5173/auth/github/callback';
 

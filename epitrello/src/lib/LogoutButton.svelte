@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 
 	let isLoggedIn = false;
 	if (browser) {
@@ -12,7 +13,7 @@
 		localStorage.removeItem('authToken');
 		localStorage.removeItem('user');
 		isLoggedIn = false;
-		goto('/login');
+		goto(resolve('/login'));
 	}
 </script>
 

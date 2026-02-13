@@ -2,6 +2,7 @@
 	import UserSearchBar from '../../../user_search_bar.svelte';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
 
 	type ShareMember = {
@@ -44,7 +45,7 @@
 
 		const rawUser = localStorage.getItem('user');
 		if (!rawUser) {
-			goto('/login');
+			goto(resolve('/login'));
 			return;
 		}
 
@@ -54,12 +55,12 @@
 		} catch {
 			localStorage.removeItem('user');
 			localStorage.removeItem('authToken');
-			goto('/login');
+			goto(resolve('/login'));
 			return;
 		}
 
 		if (!currentUser?.id) {
-			goto('/login');
+			goto(resolve('/login'));
 			return;
 		}
 
@@ -230,7 +231,7 @@
 				return;
 			}
 
-			goto(`/u/${currentUserId}`);
+			goto(resolve(`/u/${currentUserId}`));
 		} catch (err) {
 			console.error('Erreur delete board', err);
 			errorMessage = 'Network error while deleting.';
@@ -260,7 +261,7 @@
 				</div>
 
 				<a
-					href={`/b/${data.board.id}`}
+					href={resolve(`/b/${data.board.id}`)}
 					class="rounded-md border border-sky-300/25 bg-slate-800/80 px-4 py-2 text-sm font-semibold text-slate-100 transition-colors hover:bg-slate-700/90"
 				>
 					Back to board
@@ -378,7 +379,7 @@
 						<p class="mt-2 text-sm text-slate-300">Loading members...</p>
 					{:else if members.length}
 						<ul class="select-text mt-3 grid gap-2">
-							{#each members as member}
+							{#each members as member (member.userId)}
 								<li
 									class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-700 bg-slate-800/70 px-3 py-2 text-sm"
 								>

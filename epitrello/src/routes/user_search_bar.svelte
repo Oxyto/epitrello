@@ -3,6 +3,7 @@
 	import LogoutButton from '$lib/LogoutButton.svelte';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { onMount, tick } from 'svelte';
 
 	type SessionUser = {
@@ -43,7 +44,7 @@
 		if (!user) {
 			localStorage.removeItem('user');
 			localStorage.removeItem('authToken');
-			goto('/login');
+			goto(resolve('/login'));
 			return null;
 		}
 
@@ -150,7 +151,7 @@
 
 		isCreatingBoard = false;
 		isCreatePanelOpen = false;
-		goto(`/b/${uuid}`);
+		goto(resolve(`/b/${uuid}`));
 	}
 
 	function handleProfileClick() {
@@ -159,7 +160,7 @@
 			return;
 		}
 
-		goto(`/u/${user.id}#profile`);
+		goto(resolve(`/u/${user.id}#profile`));
 	}
 </script>
 
@@ -170,7 +171,7 @@
 	class="sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-sky-300/20 bg-slate-900/85 p-4 shadow-lg shadow-slate-950/50 backdrop-blur-sm"
 >
 	<a
-		href={currentUserId ? `/u/${currentUserId}` : '/login'}
+		href={resolve(currentUserId ? `/u/${currentUserId}` : '/login')}
 		class="flex flex-row items-center gap-2 select-none"
 		draggable="false"
 		><img src={EpitrelloLogo} alt="EpiTrello Logo" class="w-12" draggable="false" />

@@ -57,7 +57,11 @@ export async function requireBoardAccess(
 	}
 
 	const allowed =
-		mode === 'view' ? canViewBoard(role) : mode === 'edit' ? canEditBoard(role) : canManageBoard(role);
+		mode === 'view'
+			? canViewBoard(role)
+			: mode === 'edit'
+				? canEditBoard(role)
+				: canManageBoard(role);
 
 	if (!allowed) {
 		throw error(403, 'Forbidden');

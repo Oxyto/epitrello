@@ -67,7 +67,9 @@ export const GET: RequestHandler = async ({ url, request }) => {
 				cleanup();
 				try {
 					controller.close();
-				} catch {}
+				} catch (error) {
+					void error;
+				}
 			});
 		},
 		cancel() {

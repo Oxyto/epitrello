@@ -2,6 +2,7 @@
 	import UserSearchBar from '../../user_search_bar.svelte';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
 
 	const { data } = $props<{
@@ -32,7 +33,7 @@
 
 		const raw = localStorage.getItem('user');
 		if (!raw) {
-			goto('/login');
+			goto(resolve('/login'));
 			return;
 		}
 
@@ -42,17 +43,17 @@
 		} catch {
 			localStorage.removeItem('user');
 			localStorage.removeItem('authToken');
-			goto('/login');
+			goto(resolve('/login'));
 			return;
 		}
 
 		if (!currentUser?.id) {
-			goto('/login');
+			goto(resolve('/login'));
 			return;
 		}
 
 		if (currentUser.id !== data.user_id) {
-			goto(`/u/${currentUser.id}#profile`);
+			goto(resolve(`/u/${currentUser.id}#profile`));
 			return;
 		}
 		ready = true;
@@ -85,7 +86,7 @@
 		<div class="mb-3 flex flex-wrap items-center justify-between gap-3">
 			<h2 class="text-xl font-bold tracking-wide select-none">My boards</h2>
 			<a
-				href={`/u/${data.user_id}/settings`}
+				href={resolve(`/u/${data.user_id}/settings`)}
 				class="rounded-md border border-sky-300/25 bg-slate-800/80 px-3 py-2 text-sm font-semibold text-slate-100 transition-colors hover:bg-slate-700/90"
 			>
 				User Settings
@@ -93,13 +94,13 @@
 		</div>
 		{#if data.ownedBoards && data.ownedBoards.length}
 			<ul class="flex flex-wrap gap-3">
-				{#each data.ownedBoards as board}
+				{#each data.ownedBoards as board (board.uuid)}
 					<li
 						class="w-48 rounded-lg border border-sky-300/25 bg-slate-800/85 p-3 text-slate-100 shadow-md shadow-slate-950/50"
 					>
 						<div class="flex items-center justify-between gap-2">
 							<a
-								href={`/b/${board.uuid}`}
+								href={resolve(`/b/${board.uuid}`)}
 								class="block text-lg font-semibold text-slate-100 hover:underline"
 							>
 								{board.name}
@@ -126,13 +127,13 @@
 		<h2 class="mb-3 mt-8 text-xl font-bold tracking-wide select-none">Shared boards</h2>
 		{#if data.sharedBoards && data.sharedBoards.length}
 			<ul class="flex flex-wrap gap-3">
-				{#each data.sharedBoards as board}
+				{#each data.sharedBoards as board (board.uuid)}
 					<li
 						class="w-56 rounded-lg border border-sky-300/25 bg-slate-800/85 p-3 text-slate-100 shadow-md shadow-slate-950/50"
 					>
 						<div class="flex items-center justify-between gap-2">
 							<a
-								href={`/b/${board.uuid}`}
+								href={resolve(`/b/${board.uuid}`)}
 								class="block text-lg font-semibold text-slate-100 hover:underline"
 							>
 								{board.name}

@@ -2,6 +2,7 @@
 	import UserSearchBar from '../../../user_search_bar.svelte';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
 
 	const { data } = $props<{
@@ -26,7 +27,7 @@
 
 		const rawUser = localStorage.getItem('user');
 		if (!rawUser) {
-			goto('/login');
+			goto(resolve('/login'));
 			return;
 		}
 
@@ -36,18 +37,18 @@
 		} catch {
 			localStorage.removeItem('user');
 			localStorage.removeItem('authToken');
-			goto('/login');
+			goto(resolve('/login'));
 			return;
 		}
 
 		if (!currentUser?.id) {
-			goto('/login');
+			goto(resolve('/login'));
 			return;
 		}
 
 		currentUserId = currentUser.id;
 		if (currentUserId !== data.user_id) {
-			goto(`/u/${currentUserId}/settings`);
+			goto(resolve(`/u/${currentUserId}/settings`));
 			return;
 		}
 
@@ -153,7 +154,7 @@
 
 			localStorage.removeItem('authToken');
 			localStorage.removeItem('user');
-			goto('/login');
+			goto(resolve('/login'));
 		} catch (err) {
 			console.error('Erreur delete account', err);
 			errorMessage = 'Network error while deleting account.';
@@ -181,7 +182,7 @@
 					<p class="mt-1 text-sm text-slate-300">Manage your profile and account preferences.</p>
 				</div>
 				<a
-					href={`/u/${data.user_id}#profile`}
+					href={resolve(`/u/${data.user_id}#profile`)}
 					class="rounded-md border border-sky-300/25 bg-slate-800/80 px-4 py-2 text-sm font-semibold text-slate-100 transition-colors hover:bg-slate-700/90"
 				>
 					Back to profile

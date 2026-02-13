@@ -3,6 +3,7 @@
 	import Card from './card.svelte';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
 
 	type UiCard = {
@@ -272,7 +273,9 @@
 				if (typeof payload.actorId === 'string') {
 					actorId = payload.actorId;
 				}
-			} catch {}
+			} catch (error) {
+				void error;
+			}
 
 			if (actorId && actorId === currentUserId) {
 				return;
@@ -293,7 +296,7 @@
 
 			const raw = localStorage.getItem('user');
 			if (!raw) {
-				goto('/login');
+				goto(resolve('/login'));
 				return;
 			}
 
@@ -303,12 +306,12 @@
 			} catch {
 				localStorage.removeItem('user');
 				localStorage.removeItem('authToken');
-				goto('/login');
+				goto(resolve('/login'));
 				return;
 			}
 
 			if (!currentUser?.id) {
-				goto('/login');
+				goto(resolve('/login'));
 				return;
 			}
 
@@ -1072,7 +1075,7 @@
 			/>
 			{#if boardId && canManage}
 				<a
-					href={`/b/${boardId}/settings`}
+					href={resolve(`/b/${boardId}/settings`)}
 					class="rounded-md border border-sky-300/25 bg-slate-700/75 px-3 py-2 text-sm font-semibold text-slate-100 transition-colors hover:bg-slate-600/90"
 				>
 					Board Settings
@@ -1099,7 +1102,7 @@
 		</p>
 
 		<div class="flex gap-3 overflow-x-auto px-2 py-3">
-			{#each lists as list, i}
+			{#each lists as list, i (list.uuid ?? i)}
 				{#if listDropPreviewIndex === i}
 					<div
 						class={`min-w-[220px] self-stretch rounded-xl border-2 border-dashed border-sky-300/70 bg-sky-400/20 ${draggedListIndex === null ? 'pointer-events-none' : ''}`}
@@ -1156,7 +1159,7 @@
 							void handleDropOnList(i, event);
 						}}
 					>
-						{#each list.cards as card, j}
+						{#each list.cards as card, j (card.uuid ?? card.id ?? j)}
 							{#if cardDropPreview && cardDropPreview.listIndex === i && cardDropPreview.targetIndex === j}
 								<li
 									class="pointer-events-none rounded-lg border-2 border-dashed border-sky-300/70 bg-sky-400/20"
@@ -1315,7 +1318,7 @@
 						</h3>
 						<div class="mb-2 flex flex-wrap gap-1.5">
 							{#if selectedCard.assignees?.length}
-								{#each selectedCard.assignees as assignee}
+								{#each selectedCard.assignees as assignee (assignee)}
 									<span
 										class="inline-flex items-center gap-1 rounded-md bg-slate-700/90 px-2 py-1 text-xs text-slate-100 ring-1 ring-slate-500"
 									>
@@ -1413,7 +1416,7 @@
 						<h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-sky-200">Tags</h3>
 						<div class="mb-2 flex flex-wrap gap-1.5">
 							{#if selectedCard.tags?.length}
-								{#each selectedCard.tags as tag}
+								{#each selectedCard.tags as tag (tag)}
 									<span
 										class="inline-flex items-center gap-1 rounded-md bg-sky-500/20 px-2 py-1 text-xs text-sky-100 ring-1 ring-sky-300/30"
 									>

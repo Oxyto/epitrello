@@ -14,11 +14,11 @@
 	}>();
 
 	const dispatch = createEventDispatcher<{
-		close: {};
+		close: undefined;
 	}>();
 
 	function close() {
-		dispatch('close', {});
+		dispatch('close');
 	}
 
 	function handleBackdropClick(event: MouseEvent) {
@@ -73,7 +73,7 @@
 
 					{#if card.tags && card.tags.length}
 						<div class="flex flex-wrap gap-2">
-							{#each card.tags as tag}
+							{#each card.tags as tag (tag)}
 								<span
 									class="inline-flex items-center rounded-full border border-sky-300/30 bg-sky-500/20 px-2 py-0.5 text-xs text-sky-100"
 								>
