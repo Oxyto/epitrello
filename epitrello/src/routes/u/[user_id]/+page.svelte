@@ -59,7 +59,7 @@
 	});
 
 	async function handleDeleteBoard(uuid: string) {
-		const confirmDelete = confirm('Supprimer ce board ?');
+		const confirmDelete = confirm('Delete this board?');
 		if (!confirmDelete) return;
 
 		const res = await fetch(
@@ -68,7 +68,7 @@
 		);
 
 		if (!res.ok) {
-			console.error('Erreur suppression board', await res.text());
+			console.error('Board deletion error', await res.text());
 			return;
 		}
 
@@ -83,12 +83,12 @@
 		class="mx-8 my-10 rounded-xl border border-sky-300/25 bg-slate-900/75 p-5 text-slate-100 shadow-lg shadow-slate-950/60 backdrop-blur-sm md:mx-24 xl:mx-64"
 	>
 		<div class="mb-3 flex flex-wrap items-center justify-between gap-3">
-			<h2 class="text-xl font-bold tracking-wide select-none">Mes boards</h2>
+			<h2 class="text-xl font-bold tracking-wide select-none">My boards</h2>
 			<a
 				href={`/u/${data.user_id}/settings`}
 				class="rounded-md border border-sky-300/25 bg-slate-800/80 px-3 py-2 text-sm font-semibold text-slate-100 transition-colors hover:bg-slate-700/90"
 			>
-				User settings
+				User Settings
 			</a>
 		</div>
 		{#if data.ownedBoards && data.ownedBoards.length}
@@ -108,7 +108,7 @@
 								type="button"
 								class="h-8 w-8 rounded-md border border-rose-300/25 bg-slate-700/80 text-rose-200 transition-all hover:cursor-pointer hover:bg-rose-500/20 hover:text-rose-100"
 								onclick={() => handleDeleteBoard(board.uuid)}
-								title="Supprimer ce board"
+								title="Delete this board"
 							>
 								X
 							</button>
@@ -120,12 +120,10 @@
 				{/each}
 			</ul>
 		{:else}
-			<p class="text-sm text-slate-300">
-				Aucun board pour le moment. Utilise le bouton "Create" pour en créer un.
-			</p>
+			<p class="text-sm text-slate-300">No boards yet. Use the "Create" button to create one.</p>
 		{/if}
 
-		<h2 class="mb-3 mt-8 text-xl font-bold tracking-wide select-none">Boards partagés</h2>
+		<h2 class="mb-3 mt-8 text-xl font-bold tracking-wide select-none">Shared boards</h2>
 		{#if data.sharedBoards && data.sharedBoards.length}
 			<ul class="flex flex-wrap gap-3">
 				{#each data.sharedBoards as board}
@@ -155,9 +153,9 @@
 				{/each}
 			</ul>
 		{:else}
-			<p class="text-sm text-slate-300">Aucun board partagé pour le moment.</p>
+			<p class="text-sm text-slate-300">No shared boards yet.</p>
 		{/if}
 	</div>
 {:else}
-	<p class="p-4 text-slate-300">Redirection...</p>
+	<p class="p-4 text-slate-300">Redirecting...</p>
 {/if}
