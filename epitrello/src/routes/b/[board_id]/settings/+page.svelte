@@ -246,7 +246,7 @@
 		class="mx-auto min-h-[calc(100vh-4rem)] w-full max-w-5xl px-4 py-6 text-slate-100 sm:px-8 lg:px-12"
 	>
 		<section
-			class="rounded-xl border border-sky-300/25 bg-slate-900/75 p-5 shadow-lg shadow-slate-950/60 backdrop-blur-sm"
+			class="select-none rounded-xl border border-sky-300/25 bg-slate-900/75 p-5 shadow-lg shadow-slate-950/60 backdrop-blur-sm"
 		>
 			<div class="mb-5 flex flex-wrap items-start justify-between gap-3">
 				<div>
@@ -312,7 +312,7 @@
 		<section
 			class="mt-5 rounded-xl border border-sky-300/25 bg-slate-900/75 p-5 shadow-lg shadow-slate-950/60 backdrop-blur-sm"
 		>
-			<h2 class="text-lg font-semibold">Information</h2>
+			<h2 class="select-none text-lg font-semibold">Information</h2>
 			<div class="mt-3 grid gap-2 text-sm text-slate-300">
 				<p><span class="font-semibold text-slate-100">ID:</span> {data.board.id}</p>
 				<p>
@@ -330,7 +330,7 @@
 
 		{#if isOwner}
 			<section
-				class="mt-5 rounded-xl border border-sky-300/25 bg-slate-900/75 p-5 shadow-lg shadow-slate-950/60 backdrop-blur-sm"
+				class=" select-none mt-5 rounded-xl border border-sky-300/25 bg-slate-900/75 p-5 shadow-lg shadow-slate-950/60 backdrop-blur-sm"
 			>
 				<h2 class="text-lg font-semibold">Sharing</h2>
 				<p class="mt-1 text-sm text-slate-300">
@@ -349,7 +349,7 @@
 						/>
 						<button
 							type="button"
-							class="rounded-md border border-sky-300/30 bg-sky-700/80 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-sky-600/90"
+							class="hover:cursor-pointer rounded-md border border-sky-300/30 bg-sky-700/80 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-sky-600/90"
 							onclick={copyShareLink}
 						>
 							Copy
@@ -363,7 +363,7 @@
 					</label>
 					<select
 						id="default-role"
-						class="w-fit rounded-md border border-slate-600/70 bg-slate-800/80 px-3 py-2 text-sm text-slate-100"
+						class="hover:cursor-pointer w-fit rounded-md border border-slate-600/70 bg-slate-800/80 px-3 py-2 text-sm text-slate-100"
 						value={defaultPermission}
 						onchange={handleDefaultPermissionChange}
 					>
@@ -377,7 +377,7 @@
 					{#if sharingLoading}
 						<p class="mt-2 text-sm text-slate-300">Loading members...</p>
 					{:else if members.length}
-						<ul class="mt-3 grid gap-2">
+						<ul class="select-text mt-3 grid gap-2">
 							{#each members as member}
 								<li
 									class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-700 bg-slate-800/70 px-3 py-2 text-sm"
@@ -390,7 +390,7 @@
 									</div>
 									{#if member.role === 'owner'}
 										<span
-											class="rounded-md border border-sky-300/30 bg-sky-500/20 px-2 py-1 text-xs font-semibold text-sky-100"
+											class="select-none rounded-md border border-sky-300/30 bg-sky-500/20 px-2 py-1 text-xs font-semibold text-sky-100"
 										>
 											Owner
 										</span>
