@@ -62,7 +62,11 @@ const state = {
 	getFullBoardValue: null as FullBoardMock,
 	loginUsersByEmail: {} as Record<string, MockLoginUser | null>,
 	loginGetByEmailCalls: [] as string[],
-	loginSaveCalls: [] as MockLoginUser[]
+	loginSaveCalls: [] as MockLoginUser[],
+	userUpdateCalls: [] as Array<{ userId: string; updates: { username?: string } }>,
+	userUpdateError: null as Error | null,
+	userDeleteCalls: [] as string[],
+	userDeleteError: null as Error | null
 };
 
 const rdb = {
@@ -131,6 +135,20 @@ const UserConnector = {
 	save: async (user: MockLoginUser) => {
 		state.loginSaveCalls.push(user);
 		state.loginUsersByEmail[user.email] = user;
+	},
+	updateProfile: async (userId: string, updates: { username?: string }) => {
+		state.userUpdateCalls.push({ userId, updates });
+
+		if (state.userUpdateError) {
+			throw state.userUpdateError;
+		}
+	},
+	del: async (userId: string) => {
+		state.userDeleteCalls.push(userId);
+
+		if (state.userDeleteError) {
+			throw state.userDeleteError;
+		}
 	}
 };
 
@@ -220,6 +238,7 @@ const cardsRoute = await import('../../src/routes/api/cards/+server');
 const tagsRoute = await import('../../src/routes/api/tags/+server');
 const boardFullRoute = await import('../../src/routes/api/board-full/+server');
 const loginRoute = await import('../../src/routes/api/login/+server');
+const usersRoute = await import('../../src/routes/api/users/+server');
 
 const expectHttpErrorStatus = async (
 	maybePromise: PromiseLike<unknown> | unknown,
@@ -275,6 +294,10 @@ beforeEach(() => {
 	state.loginUsersByEmail = {};
 	state.loginGetByEmailCalls.length = 0;
 	state.loginSaveCalls.length = 0;
+	state.userUpdateCalls.length = 0;
+	state.userUpdateError = null;
+	state.userDeleteCalls.length = 0;
+	state.userDeleteError = null;
 });
 
 describe('api/board-state +server', () => {
@@ -1051,6 +1074,120 @@ describe('api/board-full +server', () => {
 			{ key: 'card:card-1', field: 'description' }
 		]);
 		expect(state.rdbHgetallCalls).toEqual(['tag:tag-1', 'tag:tag-2', 'tag:tag-3']);
+	});
+});
+
+describe('api/users +server', () => {
+	it('PATCH returns 400 when payload is incomplete', async () => {
+		const response = await usersRoute.PATCH({
+			request: new Request('http://localhost/api/users', {
+				method: 'PATCH',
+				body: JSON.stringify({ userId: 'user-1' })
+			})
+		} as any);
+
+		expect(response.status).toBe(400);
+		expect(await response.json()).toEqual({
+			error: 'userId, requesterId and displayName are required'
+		});
+		expect(state.userUpdateCalls).toHaveLength(0);
+	});
+
+	it('PATCH returns 403 when requester does not match target user', async () => {
+		const response = await usersRoute.PATCH({
+			request: new Request('http://localhost/api/users', {
+				method: 'PATCH',
+				body: JSON.stringify({
+					userId: 'user-1',
+					requesterId: 'user-2',
+					displayName: 'Alice'
+				})
+			})
+		} as any);
+
+		expect(response.status).toBe(403);
+		expect(await response.json()).toEqual({ error: 'Forbidden' });
+		expect(state.userUpdateCalls).toHaveLength(0);
+	});
+
+	it('PATCH returns 404 when user does not exist', async () => {
+		state.boardsUser = null;
+
+		const response = await usersRoute.PATCH({
+			request: new Request('http://localhost/api/users', {
+				method: 'PATCH',
+				body: JSON.stringify({
+					userId: 'user-1',
+					requesterId: 'user-1',
+					displayName: 'Alice'
+				})
+			})
+		} as any);
+
+		expect(response.status).toBe(404);
+		expect(await response.json()).toEqual({ error: 'User not found' });
+		expect(state.userUpdateCalls).toHaveLength(0);
+	});
+
+	it('PATCH updates display name when payload is valid', async () => {
+		const response = await usersRoute.PATCH({
+			request: new Request('http://localhost/api/users', {
+				method: 'PATCH',
+				body: JSON.stringify({
+					userId: 'user-1',
+					requesterId: 'user-1',
+					displayName: '  Alice Cooper  '
+				})
+			})
+		} as any);
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ ok: true, name: 'Alice Cooper' });
+		expect(state.userUpdateCalls).toEqual([
+			{ userId: 'user-1', updates: { username: 'Alice Cooper' } }
+		]);
+	});
+
+	it('DELETE returns 400 when query parameters are missing', async () => {
+		const response = await usersRoute.DELETE({
+			url: new URL('http://localhost/api/users?id=user-1')
+		} as any);
+
+		expect(response.status).toBe(400);
+		expect(await response.json()).toEqual({ error: 'id and requesterId are required' });
+		expect(state.userDeleteCalls).toHaveLength(0);
+	});
+
+	it('DELETE returns 403 when requester does not match target user', async () => {
+		const response = await usersRoute.DELETE({
+			url: new URL('http://localhost/api/users?id=user-1&requesterId=user-2')
+		} as any);
+
+		expect(response.status).toBe(403);
+		expect(await response.json()).toEqual({ error: 'Forbidden' });
+		expect(state.userDeleteCalls).toHaveLength(0);
+	});
+
+	it('DELETE returns 404 when user does not exist', async () => {
+		state.boardsUser = null;
+
+		const response = await usersRoute.DELETE({
+			url: new URL('http://localhost/api/users?id=user-1&requesterId=user-1')
+		} as any);
+
+		expect(response.status).toBe(404);
+		expect(await response.json()).toEqual({ error: 'User not found' });
+		expect(state.userDeleteCalls).toHaveLength(0);
+	});
+
+	it('DELETE removes user account when requester matches', async () => {
+		const response = await usersRoute.DELETE({
+			url: new URL('http://localhost/api/users?id=user-1&requesterId=user-1')
+		} as any);
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ ok: true });
+		expect(state.userDeleteCalls).toEqual(['user-1']);
 	});
 });
 

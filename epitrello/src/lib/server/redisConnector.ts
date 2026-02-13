@@ -66,7 +66,22 @@ export class UserConnector {
 		return user;
 	}
 
+	static async updateProfile(userId: UUID, updates: { username?: string }) {
+		const payload: Record<string, string> = {};
+
+		if (typeof updates.username === 'string') {
+			payload.username = updates.username;
+		}
+
+		if (Object.keys(payload).length === 0) {
+			return;
+		}
+
+		await rdb.hset(`user:${userId}`, payload);
+	}
+
 	static async del(userId: UUID) {
+		const user = await UserConnector.get(userId);
 		const boards_query = await rdb.smembers(`user:${userId}:boards`);
 		const sharedBoards_query = await rdb.smembers(`user:${userId}:shared_boards`);
 
@@ -88,7 +103,8 @@ export class UserConnector {
 		await Promise.all([
 			rdb.del(`user:${userId}`),
 			rdb.del(`user:${userId}:boards`),
-			rdb.del(`user:${userId}:shared_boards`)
+			rdb.del(`user:${userId}:shared_boards`),
+			...(user?.email ? [rdb.del(`user_email:${user.email.toLowerCase()}`)] : [])
 		]);
 	}
 }

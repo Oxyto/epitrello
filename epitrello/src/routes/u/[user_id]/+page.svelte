@@ -82,7 +82,15 @@
 	<div
 		class="mx-8 my-10 rounded-xl border border-sky-300/25 bg-slate-900/75 p-5 text-slate-100 shadow-lg shadow-slate-950/60 backdrop-blur-sm md:mx-24 xl:mx-64"
 	>
-		<h2 class="mb-3 text-xl font-bold tracking-wide select-none">Mes boards</h2>
+		<div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+			<h2 class="text-xl font-bold tracking-wide select-none">Mes boards</h2>
+			<a
+				href={`/u/${data.user_id}/settings`}
+				class="rounded-md border border-sky-300/25 bg-slate-800/80 px-3 py-2 text-sm font-semibold text-slate-100 transition-colors hover:bg-slate-700/90"
+			>
+				User settings
+			</a>
+		</div>
 		{#if data.ownedBoards && data.ownedBoards.length}
 			<ul class="flex flex-wrap gap-3">
 				{#each data.ownedBoards as board}
