@@ -74,6 +74,7 @@
 	let selectedCardRef = $state<{ listIndex: number; cardIndex: number } | null>(null);
 	let draggedCardRef = $state<{ listIndex: number; cardIndex: number } | null>(null);
 	let cardDropPreview = $state<{ listIndex: number; targetIndex: number } | null>(null);
+	let draggedCardHeight = $state(56);
 	let draggedListIndex = $state<number | null>(null);
 	let listDropPreviewIndex = $state<number | null>(null);
 	let editorDescription = $state('');
@@ -478,18 +479,16 @@
 		}
 	}
 
-	async function handleDeleteCard(event: CustomEvent<{ listIndex: number; cardIndex: number }>) {
+	async function deleteCardAt(listIndex: number, cardIndex: number) {
 		if (!canEdit) return;
-		const { listIndex, cardIndex } = event.detail;
-
 		if (!Array.isArray(lists) || !lists[listIndex]) {
-			console.warn('handleDeleteCard: listIndex invalide', listIndex, lists);
+			console.warn('deleteCardAt: listIndex invalide', listIndex, lists);
 			return;
 		}
 
 		const list = lists[listIndex];
 		if (!Array.isArray(list.cards) || !list.cards[cardIndex]) {
-			console.warn('handleDeleteCard: cardIndex invalide', cardIndex, list.cards);
+			console.warn('deleteCardAt: cardIndex invalide', cardIndex, list.cards);
 			return;
 		}
 
@@ -532,8 +531,20 @@
 				console.error('Erreur réseau API delete card', err);
 			}
 		} else {
-			console.warn('handleDeleteCard: pas de uuid sur la carte, API non appelée');
+			console.warn('deleteCardAt: pas de uuid sur la carte, API non appelée');
 		}
+	}
+
+	async function handleDeleteCard(event: CustomEvent<{ listIndex: number; cardIndex: number }>) {
+		const { listIndex, cardIndex } = event.detail;
+		await deleteCardAt(listIndex, cardIndex);
+	}
+
+	async function handleDeleteCardFromEditor() {
+		const context = getSelectedCardContext();
+		if (!context) return;
+		const { listIndex, cardIndex } = context;
+		await deleteCardAt(listIndex, cardIndex);
 	}
 	function handleOpenDetails(event: CustomEvent<{ listIndex: number; cardIndex: number }>) {
 		const { listIndex, cardIndex } = event.detail;
@@ -704,9 +715,13 @@
 		};
 	}
 
-	function handleDragStart(event: CustomEvent<{ listIndex: number; cardIndex: number }>) {
+	function handleDragStart(
+		event: CustomEvent<{ listIndex: number; cardIndex: number; height?: number | null }>
+	) {
 		if (!canEdit) return;
-		draggedCardRef = event.detail;
+		const { listIndex, cardIndex, height } = event.detail;
+		draggedCardRef = { listIndex, cardIndex };
+		draggedCardHeight = height && height > 0 ? height : 56;
 		cardDropPreview = null;
 		listDropPreviewIndex = null;
 	}
@@ -714,6 +729,7 @@
 	function handleDragEnd() {
 		draggedCardRef = null;
 		cardDropPreview = null;
+		draggedCardHeight = 56;
 	}
 
 	function handleListDragStart(index: number, event: DragEvent) {
@@ -859,6 +875,7 @@
 
 		draggedCardRef = null;
 		cardDropPreview = null;
+		draggedCardHeight = 56;
 		if (!moved || moved.unchanged) return;
 
 		await persistCardMove(moved.card.uuid, moved.fromListUuid, moved.toListUuid, moved.insertIndex);
@@ -879,6 +896,7 @@
 
 		draggedCardRef = null;
 		cardDropPreview = null;
+		draggedCardHeight = 56;
 		if (!moved || moved.unchanged) return;
 
 		await persistCardMove(moved.card.uuid, moved.fromListUuid, moved.toListUuid, moved.insertIndex);
@@ -1112,7 +1130,7 @@
 								<button
 									type="button"
 									title="Delete list"
-									class="pointer-events-none absolute right-0 top-0 h-8 w-8 cursor-pointer rounded-full border border-rose-300/20 bg-slate-800/90 text-center text-sm font-bold text-rose-200 opacity-0 shadow-sm shadow-black/30 transition-all group-hover/list-corner:pointer-events-auto group-hover/list-corner:opacity-100 hover:border-rose-300/60 hover:bg-rose-500/20 hover:text-rose-100"
+									class="absolute right-0 top-0 h-8 w-8 cursor-pointer rounded-full border border-rose-300/20 bg-slate-800/90 text-center text-sm font-bold text-rose-200 shadow-sm shadow-black/30 transition-all hover:border-rose-300/60 hover:bg-rose-500/20 hover:text-rose-100"
 									onclick={() => deleteList(i)}
 								>
 									✕
@@ -1141,7 +1159,8 @@
 						{#each list.cards as card, j}
 							{#if cardDropPreview && cardDropPreview.listIndex === i && cardDropPreview.targetIndex === j}
 								<li
-									class="pointer-events-none h-14 rounded-lg border-2 border-dashed border-sky-300/70 bg-sky-400/20"
+									class="pointer-events-none rounded-lg border-2 border-dashed border-sky-300/70 bg-sky-400/20"
+									style={`height: ${draggedCardHeight}px;`}
 								></li>
 							{/if}
 							<Card
@@ -1160,7 +1179,8 @@
 						{/each}
 						{#if cardDropPreview && cardDropPreview.listIndex === i && cardDropPreview.targetIndex === list.cards.length}
 							<li
-								class="pointer-events-none h-14 rounded-lg border-2 border-dashed border-sky-300/70 bg-sky-400/20"
+								class="pointer-events-none rounded-lg border-2 border-dashed border-sky-300/70 bg-sky-400/20"
+								style={`height: ${draggedCardHeight}px;`}
 							></li>
 						{/if}
 					</ol>
@@ -1246,12 +1266,22 @@
 				<div class="mb-1 flex items-start gap-2">
 					<input
 						type="text"
-						class="min-w-0 flex-1 rounded-md border border-slate-600 bg-slate-800/80 px-2 py-1 text-lg font-bold text-slate-100 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none"
+						class="h-10 min-w-0 flex-1 rounded-md border border-slate-600 bg-slate-800/80 px-2 py-1 text-lg font-bold text-slate-100 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none"
 						value={selectedCard.title}
 						readonly={!canEdit}
 						oninput={handleEditorTitleInput}
 						onblur={handleEditorTitleBlur}
 					/>
+					{#if canEdit}
+						<button
+							type="button"
+							title="Delete card"
+							class="ml-1 h-10 shrink-0 cursor-pointer rounded-md border border-rose-300/35 bg-rose-500/15 px-3 text-sm font-semibold text-rose-100 shadow-md shadow-slate-950/70 transition-all hover:border-rose-300/60 hover:bg-rose-500/25"
+							onclick={handleDeleteCardFromEditor}
+						>
+							Delete
+						</button>
+					{/if}
 					<button
 						type="button"
 						class="ml-2 mt-0.5 h-8 w-8 shrink-0 cursor-pointer rounded-full border border-slate-500/70 bg-slate-800/90 text-slate-300 shadow-md shadow-slate-950/70 transition-all hover:border-sky-300/70 hover:bg-sky-500/20 hover:text-slate-100"

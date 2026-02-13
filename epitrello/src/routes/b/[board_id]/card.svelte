@@ -34,7 +34,9 @@
 		if (event.dataTransfer) {
 			event.dataTransfer.effectAllowed = 'move';
 		}
-		dispatch('dragStart', { listIndex, cardIndex });
+		const currentTarget = event.currentTarget as HTMLElement | null;
+		const height = currentTarget ? Math.round(currentTarget.getBoundingClientRect().height) : null;
+		dispatch('dragStart', { listIndex, cardIndex, height });
 	}
 
 	function handleDragEnd(event: DragEvent) {
@@ -88,20 +90,7 @@
 		onclick={handleOpenEditor}
 	></button>
 
-	{#if canEdit}
-		<div class="group/card-corner absolute right-1.5 top-1.5 z-20 h-7 w-7">
-			<button
-				type="button"
-				title="Delete card"
-				class="pointer-events-none absolute right-2 top-2 h-7 w-7 cursor-pointer rounded-full border border-rose-300/20 bg-slate-800/90 text-center text-sm font-bold text-rose-200 opacity-0 shadow-sm shadow-black/30 transition-all group-hover/card-corner:pointer-events-auto group-hover/card-corner:opacity-100 hover:border-rose-300/60 hover:bg-rose-500/20 hover:text-rose-100"
-				onclick={handleDelete}
-			>
-				✕
-			</button>
-		</div>
-	{/if}
-
-	<div class="flex items-center gap-1.5 px-1 pr-8" class:mb-1={hasMeta}>
+	<div class="flex items-center gap-1.5 px-1" class:mb-1={hasMeta}>
 		<span class="relative z-20 flex h-5 items-center">
 			<input
 				type="checkbox"
@@ -116,6 +105,17 @@
 		<p class="flex-1 px-1 font-mono text-base font-semibold leading-5 text-slate-50">
 			{card.title}
 		</p>
+
+		{#if canEdit}
+			<button
+				type="button"
+				title="Delete card"
+				class="relative z-20 h-7 w-7 shrink-0 cursor-pointer rounded-full border border-sky-100/30 bg-sky-900/25 text-center text-sm font-bold text-sky-50/85 opacity-0 pointer-events-none shadow-sm shadow-black/20 transition-all group-hover/card:opacity-100 group-hover/card:pointer-events-auto hover:border-rose-300/50 hover:bg-rose-500/20 hover:text-rose-100"
+				onclick={handleDelete}
+			>
+				✕
+			</button>
+		{/if}
 	</div>
 
 	{#if card.tags && card.tags.length}
