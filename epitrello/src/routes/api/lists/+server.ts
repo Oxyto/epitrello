@@ -6,8 +6,9 @@ import { notifyBoardUpdated } from '$lib/server/boardEvents';
 
 export const POST: RequestHandler = async ({ request }) => {
 	const { boardId, name, userId } = await request.json();
+	const normalizedName = typeof name === 'string' ? name.trim() : '';
 
-	if (!boardId || !name) {
+	if (!boardId || !normalizedName) {
 		throw error(400, 'boardId and name required');
 	}
 
@@ -16,11 +17,20 @@ export const POST: RequestHandler = async ({ request }) => {
 	});
 
 	try {
-		const listId = await ListConnector.create(boardId as UUID, name);
+		const listId = await ListConnector.create(boardId as UUID, normalizedName);
 		await rdb.sadd(`board:${boardId}:lists`, listId);
-		notifyBoardUpdated({ boardId: String(boardId), actorId: userId, source: 'list' });
+		notifyBoardUpdated({
+			boardId: String(boardId),
+			actorId: userId,
+			source: 'list',
+			history: {
+				action: 'list.created',
+				message: `Created list "${normalizedName}".`,
+				metadata: { listId, name: normalizedName }
+			}
+		});
 
-		return json({ id: listId, name });
+		return json({ id: listId, name: normalizedName });
 	} catch (err) {
 		console.error('create list failed', err);
 		throw error(500, 'create list failed');
@@ -57,7 +67,41 @@ export const PATCH: RequestHandler = async ({ request }) => {
 
 	await rdb.hset(`list:${listId}`, updates);
 	if (boardId) {
-		notifyBoardUpdated({ boardId, actorId: userId, source: 'list' });
+		const hasNameUpdate = typeof updates.name === 'string';
+		const hasOrderUpdate = typeof updates.order === 'number';
+
+		const action =
+			hasNameUpdate && hasOrderUpdate
+				? 'list.updated'
+				: hasNameUpdate
+					? 'list.renamed'
+					: hasOrderUpdate
+						? 'list.reordered'
+						: 'list.updated';
+
+		const message =
+			hasNameUpdate && hasOrderUpdate
+				? `Updated list "${updates.name}".`
+				: hasNameUpdate
+					? `Renamed list to "${updates.name}".`
+					: hasOrderUpdate
+						? `Reordered list "${listId}".`
+						: `Updated list "${listId}".`;
+
+		notifyBoardUpdated({
+			boardId,
+			actorId: userId,
+			source: 'list',
+			history: {
+				action,
+				message,
+				metadata: {
+					listId: String(listId),
+					...(typeof updates.name === 'string' ? { name: updates.name } : {}),
+					...(typeof updates.order === 'number' ? { order: String(updates.order) } : {})
+				}
+			}
+		});
 	}
 
 	return json({ ok: true });
@@ -83,7 +127,16 @@ export const DELETE: RequestHandler = async ({ url }) => {
 	try {
 		await ListConnector.del(id as UUID);
 		if (boardId) {
-			notifyBoardUpdated({ boardId, actorId: userId, source: 'list' });
+			notifyBoardUpdated({
+				boardId,
+				actorId: userId,
+				source: 'list',
+				history: {
+					action: 'list.deleted',
+					message: `Deleted list "${id}".`,
+					metadata: { listId: id }
+				}
+			});
 		}
 		return json({ ok: true });
 	} catch (err) {

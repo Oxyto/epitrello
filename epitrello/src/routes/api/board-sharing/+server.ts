@@ -3,6 +3,7 @@ import { error, json } from '@sveltejs/kit';
 import { BoardConnector, UserConnector, rdb, type UUID } from '$lib/server/redisConnector';
 import { requireBoardAccess } from '$lib/server/boardAccess';
 import type { ShareRole } from '$lib/interfaces/IBoard';
+import { notifyBoardUpdated } from '$lib/server/boardEvents';
 
 function normalizeId(value: unknown) {
 	return typeof value === 'string' ? value.trim() : '';
@@ -109,6 +110,16 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	const role = normalizeShareRole(board.share_default_role) ?? 'viewer';
 	await BoardConnector.addUserToBoardRole(boardId as UUID, userId as UUID, role);
+	notifyBoardUpdated({
+		boardId,
+		actorId: userId,
+		source: 'sharing',
+		history: {
+			action: 'sharing.joined',
+			message: `Joined board as "${role}".`,
+			metadata: { role, userId }
+		}
+	});
 
 	return json({ ok: true, role, joined: true });
 };
@@ -129,9 +140,17 @@ export const PATCH: RequestHandler = async ({ request }) => {
 	const { board } = await requireBoardAccess(boardId as UUID, requesterId, 'owner');
 
 	const updateOps: Array<Promise<unknown>> = [];
+	let didUpdateDefaultRole = false;
+	let didUpdateMemberRole = false;
+	let memberRoleAction: 'sharing.member.updated' | 'sharing.member.removed' | null = null;
+	const historyMessages: string[] = [];
+	const historyMetadata: Record<string, string> = {};
 
 	if (defaultRole) {
 		updateOps.push(rdb.hset(`board:${boardId}`, { share_default_role: defaultRole }));
+		didUpdateDefaultRole = true;
+		historyMessages.push(`Changed default invite permission to "${defaultRole}".`);
+		historyMetadata.defaultRole = defaultRole;
 	}
 
 	if (memberUserId && memberRole) {
@@ -143,9 +162,15 @@ export const PATCH: RequestHandler = async ({ request }) => {
 		if (!targetUser) {
 			throw error(404, 'Target user not found');
 		}
+		const targetUserLabel = targetUser.username?.trim() || targetUser.email?.trim() || memberUserId;
+		historyMetadata.memberUserId = memberUserId;
+		historyMetadata.memberUser = targetUserLabel;
 
 		if (memberRole === 'remove') {
 			updateOps.push(BoardConnector.removeUserFromBoard(boardId as UUID, memberUserId as UUID));
+			didUpdateMemberRole = true;
+			memberRoleAction = 'sharing.member.removed';
+			historyMessages.push(`Removed "${targetUserLabel}" from board access.`);
 		} else {
 			const normalizedMemberRole = normalizeShareRole(memberRole);
 			if (!normalizedMemberRole) {
@@ -158,6 +183,10 @@ export const PATCH: RequestHandler = async ({ request }) => {
 					normalizedMemberRole
 				)
 			);
+			didUpdateMemberRole = true;
+			memberRoleAction = 'sharing.member.updated';
+			historyMessages.push(`Set "${targetUserLabel}" role to "${normalizedMemberRole}".`);
+			historyMetadata.memberRole = normalizedMemberRole;
 		}
 	}
 
@@ -166,6 +195,22 @@ export const PATCH: RequestHandler = async ({ request }) => {
 	}
 
 	await Promise.all(updateOps);
+	notifyBoardUpdated({
+		boardId,
+		actorId: requesterId,
+		source: 'sharing',
+		history: {
+			action:
+				didUpdateDefaultRole && didUpdateMemberRole
+					? 'sharing.updated'
+					: didUpdateDefaultRole
+						? 'sharing.default_role.updated'
+						: (memberRoleAction ?? 'sharing.updated'),
+			message:
+				historyMessages.length > 0 ? historyMessages.join(' ') : 'Updated board sharing settings.',
+			metadata: historyMetadata
+		}
+	});
 
 	return json({ ok: true });
 };

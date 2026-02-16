@@ -52,6 +52,21 @@
 		actorId?: string | null;
 	};
 
+	type BoardHistoryResponse = {
+		entries: Array<{
+			id: string;
+			source: 'board' | 'list' | 'card' | 'tag' | 'sharing' | 'unknown';
+			action: string;
+			message: string;
+			createdAt: string;
+			metadata: Record<string, string>;
+			actor: {
+				id: string | null;
+				name: string;
+			};
+		}>;
+	};
+
 	const { data } = $props<{
 		data: {
 			board: { id: string; name: string } | undefined;
@@ -68,6 +83,10 @@
 	let canManage = $state(false);
 	let loadError = $state('');
 	let inviteMessage = $state('');
+	let historyEntries = $state<BoardHistoryResponse['entries']>([]);
+	let historyError = $state('');
+	let historyLoading = $state(false);
+	let historyPanelOpen = $state(false);
 
 	let lists = $state<UiList[]>([]);
 	let newListName = $state('');
@@ -178,6 +197,64 @@
 		}
 	}
 
+	function formatHistoryTimestamp(value: string) {
+		const date = new Date(value);
+		if (Number.isNaN(date.getTime())) {
+			return value;
+		}
+
+		return date.toLocaleString();
+	}
+
+	async function loadBoardHistory(options: { silent?: boolean } = {}) {
+		if (!browser || !boardId || !currentUserId) return;
+
+		const silent = options.silent ?? false;
+		if (!silent) {
+			historyLoading = true;
+			historyError = '';
+		}
+
+		try {
+			const params = new URLSearchParams({
+				boardId,
+				userId: currentUserId,
+				limit: '80'
+			});
+			const res = await fetch(`/api/board-history?${params.toString()}`);
+			if (!res.ok) {
+				if (!silent || historyEntries.length === 0) {
+					historyError =
+						res.status === 403
+							? 'Access denied for board activity.'
+							: 'Unable to load board activity.';
+				}
+				console.warn('Erreur /api/board-history', await res.text());
+				return;
+			}
+
+			const payload = (await res.json()) as BoardHistoryResponse;
+			historyEntries = Array.isArray(payload.entries) ? payload.entries : [];
+			historyError = '';
+		} catch (err) {
+			if (!silent || historyEntries.length === 0) {
+				historyError = 'Network error while loading board activity.';
+			}
+			console.error('Erreur réseau /api/board-history', err);
+		} finally {
+			if (!silent) {
+				historyLoading = false;
+			}
+		}
+	}
+
+	function toggleHistoryPanel() {
+		historyPanelOpen = !historyPanelOpen;
+		if (historyPanelOpen && historyEntries.length === 0 && !historyLoading) {
+			void loadBoardHistory();
+		}
+	}
+
 	async function tryJoinWithInvite(inviteToken: string) {
 		if (!browser || !boardId || !currentUserId || !inviteToken) return;
 
@@ -231,7 +308,7 @@
 
 		realtimeReloadInFlight = true;
 		try {
-			await loadBoardFull();
+			await Promise.all([loadBoardFull(), loadBoardHistory({ silent: true })]);
 		} finally {
 			realtimeReloadInFlight = false;
 			if (realtimeReloadQueued) {
@@ -278,6 +355,7 @@
 			}
 
 			if (actorId && actorId === currentUserId) {
+				void loadBoardHistory({ silent: true });
 				return;
 			}
 
@@ -323,7 +401,7 @@
 				await tryJoinWithInvite(inviteToken);
 			}
 
-			await loadBoardFull();
+			await Promise.all([loadBoardFull(), loadBoardHistory()]);
 			if (cancelled) {
 				return;
 			}
@@ -1073,6 +1151,20 @@
 				readonly={!canManage}
 				onblur={persistBoardName}
 			/>
+			<button
+				type="button"
+				onclick={toggleHistoryPanel}
+				class="hover:cursor-pointer relative rounded-md border border-sky-300/25 bg-slate-700/75 px-3 py-2 text-sm font-semibold text-slate-100 transition-colors hover:bg-slate-600/90"
+				aria-expanded={historyPanelOpen}
+				aria-controls="board-history-panel"
+			>
+				Activity
+				<span
+					class="ml-2 inline-flex min-w-5 items-center justify-center rounded-full bg-sky-600 px-1.5 py-0.5 text-xs text-white"
+				>
+					{historyEntries.length}
+				</span>
+			</button>
 			{#if boardId && canManage}
 				<a
 					href={resolve(`/b/${boardId}/settings`)}
@@ -1261,6 +1353,74 @@
 			{/if}
 		</div>
 	</div>
+	{#if historyPanelOpen}
+		<button
+			type="button"
+			class="fixed inset-0 z-30 bg-slate-950/40 backdrop-blur-[1px]"
+			onclick={() => (historyPanelOpen = false)}
+			aria-label="Close activity panel"
+		></button>
+		<aside
+			id="board-history-panel"
+			class="fixed right-0 top-16 z-40 h-[calc(100vh-4rem)] w-full max-w-md border-l border-sky-300/25 bg-slate-900/95 p-4 shadow-2xl shadow-slate-950/80"
+		>
+			<div class="mb-3 flex items-center justify-between gap-2">
+				<h2 class="select-none text-sm font-semibold uppercase tracking-wide text-sky-200">Activity History</h2>
+				<div class="flex items-center gap-2">
+					<button
+						type="button"
+						class="hover:cursor-pointer rounded-md border border-slate-400/40 bg-slate-800/90 px-2 py-1 text-xs text-slate-100 transition-colors hover:bg-slate-700/90"
+						onclick={() => void loadBoardHistory()}
+					>
+						Refresh
+					</button>
+					<button
+						type="button"
+						class="hover:cursor-pointer h-8 w-8 rounded-full border border-slate-400/50 bg-slate-800/90 text-slate-200 transition-colors hover:bg-slate-700/90"
+						onclick={() => (historyPanelOpen = false)}
+					>
+						✕
+					</button>
+				</div>
+			</div>
+
+			{#if historyLoading}
+				<p
+					class="rounded-md border border-slate-500/35 bg-slate-800/70 px-3 py-2 text-sm text-slate-300"
+				>
+					Loading activity...
+				</p>
+			{:else if historyError}
+				<p
+					class="rounded-md border border-rose-300/30 bg-rose-500/15 px-3 py-2 text-sm text-rose-100"
+				>
+					{historyError}
+				</p>
+			{:else if historyEntries.length === 0}
+				<p
+					class="rounded-md border border-slate-500/35 bg-slate-800/70 px-3 py-2 text-sm text-slate-300"
+				>
+					No activity recorded yet.
+				</p>
+			{:else}
+				<ol class="max-h-[calc(100vh-11rem)] space-y-2 overflow-y-auto pr-1">
+					{#each historyEntries as entry (entry.id)}
+						<li class="rounded-lg border border-slate-500/35 bg-slate-800/70 px-3 py-2">
+							<p class="text-sm text-slate-100">{entry.message}</p>
+							<div class="mt-1 flex items-center justify-between gap-2">
+								<p class="text-xs text-slate-300">
+									by <span class="font-semibold text-sky-200">{entry.actor.name}</span>
+								</p>
+								<span class="text-[11px] text-slate-400">
+									{formatHistoryTimestamp(entry.createdAt)}
+								</span>
+							</div>
+						</li>
+					{/each}
+				</ol>
+			{/if}
+		</aside>
+	{/if}
 	{#if selectedCard && selectedList}
 		<div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4">
 			<div

@@ -71,8 +71,9 @@ async function reorderCard(
 
 export const POST: RequestHandler = async ({ request }) => {
 	const { listId, title, userId } = await request.json();
+	const normalizedTitle = typeof title === 'string' ? title.trim() : '';
 
-	if (!listId || !title) {
+	if (!listId || !normalizedTitle) {
 		throw error(400, 'listId and title required');
 	}
 
@@ -88,7 +89,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	try {
 		const currentCardIds = await rdb.smembers(`list:${listId}:cards`);
-		const cardId = await CardConnector.create(listId as string, title);
+		const cardId = await CardConnector.create(listId as string, normalizedTitle);
 
 		await rdb.sadd(`list:${listId}:cards`, cardId);
 		await rdb.hset(`card:${cardId}`, {
@@ -96,10 +97,19 @@ export const POST: RequestHandler = async ({ request }) => {
 			order: currentCardIds.length
 		});
 		if (boardId) {
-			notifyBoardUpdated({ boardId, actorId: userId, source: 'card' });
+			notifyBoardUpdated({
+				boardId,
+				actorId: userId,
+				source: 'card',
+				history: {
+					action: 'card.created',
+					message: `Created card "${normalizedTitle}".`,
+					metadata: { cardId, listId: String(listId), title: normalizedTitle }
+				}
+			});
 		}
 
-		return json({ id: cardId, title });
+		return json({ id: cardId, title: normalizedTitle });
 	} catch (err) {
 		console.error('create card failed', err);
 		throw error(500, 'create card failed');
@@ -148,16 +158,22 @@ export const PATCH: RequestHandler = async ({ request }) => {
 		await requireBoardAccess(boardId as UUID, userId, 'edit');
 	}
 
+	const changedFields: string[] = [];
+
 	if (typeof name === 'string') {
 		await rdb.hset(`card:${cardId}`, { name });
+		changedFields.push('title');
 	}
 
 	if (typeof description === 'string') {
 		await rdb.hset(`card:${cardId}`, { description });
+		changedFields.push('description');
 	}
 
 	if (typeof dueDate === 'string') {
-		await rdb.hset(`card:${cardId}`, { dueDate: dueDate.trim() });
+		const normalizedDueDate = dueDate.trim();
+		await rdb.hset(`card:${cardId}`, { dueDate: normalizedDueDate });
+		changedFields.push(normalizedDueDate ? 'due date' : 'due date cleared');
 	}
 
 	if (Array.isArray(assignees)) {
@@ -169,21 +185,63 @@ export const PATCH: RequestHandler = async ({ request }) => {
 		await Promise.all(
 			normalizedAssignees.map((assignee) => rdb.sadd(`card:${cardId}:assignees`, assignee))
 		);
+		changedFields.push('assignees');
 	}
 
 	if (typeof completed === 'boolean') {
 		await rdb.hset(`card:${cardId}`, { completed: completed ? 1 : 0 });
+		changedFields.push(completed ? 'marked completed' : 'marked active');
 	}
+
+	let movedCard = false;
 
 	if (fromListId && toListId && Number.isInteger(targetIndex)) {
 		await reorderCard(cardId, fromListId, toListId, Number(targetIndex));
+		movedCard = true;
+		changedFields.push(fromListId === toListId ? 'position' : 'list');
 	} else if (fromListId && toListId && fromListId !== toListId) {
 		await rdb.srem(`list:${fromListId}:cards`, cardId);
 		await rdb.sadd(`list:${toListId}:cards`, cardId);
 		await rdb.hset(`card:${cardId}`, { list: toListId });
+		movedCard = true;
+		changedFields.push('list');
 	}
 	if (boardId) {
-		notifyBoardUpdated({ boardId, actorId: userId, source: 'card' });
+		const normalizedName = typeof name === 'string' ? name.trim() : '';
+		const action =
+			movedCard && changedFields.length === 1
+				? 'card.moved'
+				: changedFields.length === 1 && changedFields[0] === 'title'
+					? 'card.renamed'
+					: movedCard
+						? 'card.moved'
+						: 'card.updated';
+
+		const message =
+			action === 'card.renamed' && normalizedName
+				? `Renamed a card to "${normalizedName}".`
+				: action === 'card.moved' && movedCard && fromListId && toListId
+					? fromListId === toListId
+						? `Reordered card "${cardId}".`
+						: `Moved card "${cardId}" to another list.`
+					: changedFields.length > 0
+						? `Updated card "${cardId}" (${changedFields.join(', ')}).`
+						: `Updated card "${cardId}".`;
+
+		notifyBoardUpdated({
+			boardId,
+			actorId: userId,
+			source: 'card',
+			history: {
+				action,
+				message,
+				metadata: {
+					cardId,
+					...(fromListId ? { fromListId } : {}),
+					...(toListId ? { toListId } : {})
+				}
+			}
+		});
 	}
 
 	return json({ ok: true });
@@ -223,7 +281,16 @@ export const DELETE: RequestHandler = async ({ url, request }) => {
 	try {
 		await CardConnector.del(id as UUID);
 		if (boardId) {
-			notifyBoardUpdated({ boardId, actorId: userId, source: 'card' });
+			notifyBoardUpdated({
+				boardId,
+				actorId: userId,
+				source: 'card',
+				history: {
+					action: 'card.deleted',
+					message: `Deleted card "${id}".`,
+					metadata: { cardId: id }
+				}
+			});
 		}
 		return json({ ok: true });
 	} catch (e) {

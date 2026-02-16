@@ -6,8 +6,9 @@ import { notifyBoardUpdated } from '$lib/server/boardEvents';
 
 export const POST: RequestHandler = async ({ request }) => {
 	const { cardId, name, userId } = await request.json();
+	const normalizedName = typeof name === 'string' ? name.trim() : '';
 
-	if (!cardId || !name) {
+	if (!cardId || !normalizedName) {
 		throw error(400, 'cardId and name required');
 	}
 
@@ -22,14 +23,23 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 
 	try {
-		const tagId = await TagConnector.create(cardId as UUID, name, 'label', 'gray');
+		const tagId = await TagConnector.create(cardId as UUID, normalizedName, 'label', 'gray');
 
 		await rdb.sadd(`card:${cardId}:tags`, tagId);
 		if (boardId) {
-			notifyBoardUpdated({ boardId, actorId: userId, source: 'tag' });
+			notifyBoardUpdated({
+				boardId,
+				actorId: userId,
+				source: 'tag',
+				history: {
+					action: 'tag.added',
+					message: `Added tag "${normalizedName}" on card "${cardId}".`,
+					metadata: { cardId: String(cardId), tag: normalizedName }
+				}
+			});
 		}
 
-		return json({ id: tagId, name });
+		return json({ id: tagId, name: normalizedName });
 	} catch (err) {
 		console.error('create tag failed', err);
 		throw error(500, 'create tag failed');
@@ -76,7 +86,16 @@ export const DELETE: RequestHandler = async ({ request }) => {
 			}
 		}
 		if (boardId) {
-			notifyBoardUpdated({ boardId, actorId: userId, source: 'tag' });
+			notifyBoardUpdated({
+				boardId,
+				actorId: userId,
+				source: 'tag',
+				history: {
+					action: 'tag.removed',
+					message: `Removed tag "${name}" from card "${cardId}".`,
+					metadata: { cardId, tag: name }
+				}
+			});
 		}
 
 		return json({ ok: true });

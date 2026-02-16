@@ -1,6 +1,7 @@
 import { rdb } from '$lib/server/redisConnector';
+import { appendBoardHistoryEntry, type BoardHistorySource } from './boardHistory';
 
-type BoardUpdateSource = 'board' | 'list' | 'card' | 'tag' | 'unknown';
+type BoardUpdateSource = BoardHistorySource;
 
 export type BoardUpdatedEvent = {
 	type: 'board.updated';
@@ -76,6 +77,7 @@ function parseRedisEvent(message: string) {
 			payload.source === 'list' ||
 			payload.source === 'card' ||
 			payload.source === 'tag' ||
+			payload.source === 'sharing' ||
 			payload.source === 'unknown'
 				? payload.source
 				: 'unknown';
@@ -126,24 +128,49 @@ async function ensureRedisSubscriber() {
 export function notifyBoardUpdated({
 	boardId,
 	actorId,
-	source = 'unknown'
+	source = 'unknown',
+	history
 }: {
 	boardId: string;
 	actorId?: unknown;
 	source?: BoardUpdateSource;
+	history?: {
+		action?: unknown;
+		message?: unknown;
+		metadata?: unknown;
+	};
 }) {
 	const normalizedBoardId = normalizeId(boardId);
 	if (!normalizedBoardId) {
 		return;
 	}
 
+	const normalizedSource: BoardUpdateSource =
+		source === 'board' ||
+		source === 'list' ||
+		source === 'card' ||
+		source === 'tag' ||
+		source === 'sharing' ||
+		source === 'unknown'
+			? source
+			: 'unknown';
+
 	const event: BoardUpdatedEvent = {
 		type: 'board.updated',
 		boardId: normalizedBoardId,
 		actorId: normalizeId(actorId),
-		source,
+		source: normalizedSource,
 		emittedAt: new Date().toISOString()
 	};
+
+	void appendBoardHistoryEntry({
+		boardId: normalizedBoardId,
+		actorId: event.actorId,
+		source: normalizedSource,
+		action: history?.action,
+		message: history?.message,
+		metadata: history?.metadata
+	});
 
 	void rdb.publish(BOARD_EVENTS_REDIS_CHANNEL, JSON.stringify(event)).catch((error) => {
 		console.error('board event publish failed', error);

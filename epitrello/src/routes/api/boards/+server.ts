@@ -27,6 +27,19 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	const uuid = await BoardConnector.create(ownerId, name);
 	const board = await BoardConnector.get(uuid as UUID);
+	const createdBoardName = board?.name ?? name;
+
+	notifyBoardUpdated({
+		boardId: String(uuid),
+		actorId: ownerId,
+		source: 'board',
+		history: {
+			action: 'board.created',
+			message: `Created board "${createdBoardName}".`,
+			metadata: { name: createdBoardName }
+		}
+	});
+
 	if (!board) {
 		return json(
 			{
@@ -49,8 +62,9 @@ export const POST: RequestHandler = async ({ request }) => {
 };
 export const PATCH: RequestHandler = async ({ request }) => {
 	const { boardId, name, userId } = await request.json();
+	const normalizedName = typeof name === 'string' ? name.trim() : '';
 
-	if (!boardId || !name) {
+	if (!boardId || !normalizedName) {
 		throw error(400, 'boardId and name required');
 	}
 
@@ -58,8 +72,17 @@ export const PATCH: RequestHandler = async ({ request }) => {
 		allowLegacyWithoutUserId: true
 	});
 
-	await rdb.hset(`board:${boardId}`, { name });
-	notifyBoardUpdated({ boardId: String(boardId), actorId: userId, source: 'board' });
+	await rdb.hset(`board:${boardId}`, { name: normalizedName });
+	notifyBoardUpdated({
+		boardId: String(boardId),
+		actorId: userId,
+		source: 'board',
+		history: {
+			action: 'board.renamed',
+			message: `Renamed board to "${normalizedName}".`,
+			metadata: { name: normalizedName }
+		}
+	});
 
 	return json({ ok: true });
 };
