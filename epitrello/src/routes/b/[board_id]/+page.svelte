@@ -1154,16 +1154,11 @@
 			<button
 				type="button"
 				onclick={toggleHistoryPanel}
-				class="hover:cursor-pointer relative rounded-md border border-sky-300/25 bg-slate-700/75 px-3 py-2 text-sm font-semibold text-slate-100 transition-colors hover:bg-slate-600/90"
+				class="hover:cursor-pointer rounded-md border border-sky-300/25 bg-slate-700/75 px-3 py-2 text-sm font-semibold text-slate-100 transition-colors hover:bg-slate-600/90"
 				aria-expanded={historyPanelOpen}
 				aria-controls="board-history-panel"
 			>
 				Activity
-				<span
-					class="ml-2 inline-flex min-w-5 items-center justify-center rounded-full bg-sky-600 px-1.5 py-0.5 text-xs text-white"
-				>
-					{historyEntries.length}
-				</span>
 			</button>
 			{#if boardId && canManage}
 				<a
@@ -1365,7 +1360,9 @@
 			class="fixed right-0 top-16 z-40 h-[calc(100vh-4rem)] w-full max-w-md border-l border-sky-300/25 bg-slate-900/95 p-4 shadow-2xl shadow-slate-950/80"
 		>
 			<div class="mb-3 flex items-center justify-between gap-2">
-				<h2 class="select-none text-sm font-semibold uppercase tracking-wide text-sky-200">Activity History</h2>
+				<h2 class="select-none text-sm font-semibold uppercase tracking-wide text-sky-200">
+					Activity History
+				</h2>
 				<div class="flex items-center gap-2">
 					<button
 						type="button"
