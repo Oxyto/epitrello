@@ -153,7 +153,7 @@
 			return;
 		}
 
-		selectedCard.assignees = [...selectedCard.assignees, memberLabel(member)];
+		selectedCard.assignees = [...selectedCard.assignees, member.userId];
 		editorSelectedAssignee = '';
 		await persistCardFields(selectedCard.uuid, { assignees: selectedCard.assignees });
 	}

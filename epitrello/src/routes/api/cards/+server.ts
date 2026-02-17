@@ -1,14 +1,153 @@
 import type { RequestHandler } from './$types';
 import { json, error } from '@sveltejs/kit';
-import { CardConnector, rdb, type UUID } from '$lib/server/redisConnector';
+import {
+	BoardConnector,
+	CardConnector,
+	UserConnector,
+	rdb,
+	type UUID
+} from '$lib/server/redisConnector';
 import {
 	getBoardIdFromCard,
 	getBoardIdFromList,
 	requireBoardAccess
 } from '$lib/server/boardAccess';
 import { notifyBoardUpdated } from '$lib/server/boardEvents';
+import { createUserNotification } from '$lib/server/notifications';
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(value, max));
+
+type MemberIdentity = {
+	userId: string;
+	username: string | null;
+	email: string | null;
+};
+
+function normalizeText(value: unknown) {
+	if (typeof value !== 'string') {
+		return '';
+	}
+
+	return value.trim();
+}
+
+function normalizeLookupToken(value: unknown) {
+	return normalizeText(value).toLowerCase();
+}
+
+async function resolveAssigneeUserIds(boardId: string, assignees: string[]) {
+	const board = await BoardConnector.get(boardId as UUID);
+	if (!board) {
+		return { boardName: null, userIds: [] as string[] };
+	}
+
+	const rawMemberIds = [board.owner, ...(board.editors ?? []), ...(board.viewers ?? [])];
+	const memberIds = Array.from(
+		new Set(
+			rawMemberIds
+				.map((memberId) => normalizeText(memberId))
+				.filter((memberId) => memberId.length > 0)
+		)
+	);
+
+	const memberIdSet = new Set(memberIds);
+	const resolvedUserIds = new Set<string>();
+	const unresolvedTokens = new Set<string>();
+
+	for (const assignee of assignees) {
+		const normalizedAssignee = normalizeText(assignee);
+		if (!normalizedAssignee) {
+			continue;
+		}
+
+		if (memberIdSet.has(normalizedAssignee)) {
+			resolvedUserIds.add(normalizedAssignee);
+			continue;
+		}
+
+		unresolvedTokens.add(normalizeLookupToken(normalizedAssignee));
+	}
+
+	if (unresolvedTokens.size > 0) {
+		const members = await Promise.all(
+			memberIds.map(async (memberId) => {
+				const user = await UserConnector.get(memberId as UUID);
+				return {
+					userId: memberId,
+					username: normalizeText(user?.username) || null,
+					email: normalizeText(user?.email) || null
+				} as MemberIdentity;
+			})
+		);
+
+		const lookup = new Map<string, string>();
+		for (const member of members) {
+			lookup.set(normalizeLookupToken(member.userId), member.userId);
+			if (member.username) {
+				lookup.set(normalizeLookupToken(member.username), member.userId);
+			}
+			if (member.email) {
+				lookup.set(normalizeLookupToken(member.email), member.userId);
+			}
+		}
+
+		for (const token of unresolvedTokens) {
+			const matchedUserId = lookup.get(token);
+			if (matchedUserId) {
+				resolvedUserIds.add(matchedUserId);
+			}
+		}
+	}
+
+	return {
+		boardName: board.name || null,
+		userIds: Array.from(resolvedUserIds)
+	};
+}
+
+async function notifyDueDateAssigned({
+	boardId,
+	cardId,
+	cardTitle,
+	dueDate,
+	assignees,
+	actorId
+}: {
+	boardId: string;
+	cardId: string;
+	cardTitle: string;
+	dueDate: string;
+	assignees: string[];
+	actorId?: string;
+}) {
+	if (!dueDate || assignees.length === 0) {
+		return;
+	}
+
+	const { boardName, userIds } = await resolveAssigneeUserIds(boardId, assignees);
+	const recipients = userIds.filter((userId) => userId !== actorId);
+
+	if (recipients.length === 0) {
+		return;
+	}
+
+	await Promise.all(
+		recipients.map((userId) =>
+			createUserNotification({
+				userId,
+				type: 'card.due_date',
+				title: `Due date set on "${cardTitle}"`,
+				message: `A due date (${dueDate}) was set for card "${cardTitle}".`,
+				boardId,
+				boardName: boardName ?? '',
+				cardId,
+				cardTitle,
+				dueDate,
+				actorId: actorId ?? ''
+			})
+		)
+	);
+}
 
 async function getOrderedCardIds(listId: string): Promise<string[]> {
 	const cardIds = await rdb.smembers(`list:${listId}:cards`);
@@ -159,6 +298,8 @@ export const PATCH: RequestHandler = async ({ request }) => {
 	}
 
 	const changedFields: string[] = [];
+	let normalizedAssigneesForNotification: string[] | null = null;
+	let dueDateForNotification: string | null = null;
 
 	if (typeof name === 'string') {
 		await rdb.hset(`card:${cardId}`, { name });
@@ -172,14 +313,19 @@ export const PATCH: RequestHandler = async ({ request }) => {
 
 	if (typeof dueDate === 'string') {
 		const normalizedDueDate = dueDate.trim();
+		const previousDueDate = normalizeText(await rdb.hget(`card:${cardId}`, 'dueDate'));
 		await rdb.hset(`card:${cardId}`, { dueDate: normalizedDueDate });
 		changedFields.push(normalizedDueDate ? 'due date' : 'due date cleared');
+		if (normalizedDueDate && normalizedDueDate !== previousDueDate) {
+			dueDateForNotification = normalizedDueDate;
+		}
 	}
 
 	if (Array.isArray(assignees)) {
 		const normalizedAssignees = assignees
 			.map((assignee) => String(assignee).trim())
 			.filter((assignee) => assignee.length > 0);
+		normalizedAssigneesForNotification = normalizedAssignees;
 
 		await rdb.del(`card:${cardId}:assignees`);
 		await Promise.all(
@@ -242,6 +388,25 @@ export const PATCH: RequestHandler = async ({ request }) => {
 				}
 			}
 		});
+
+		if (dueDateForNotification) {
+			const assigneesForNotification =
+				normalizedAssigneesForNotification ?? (await rdb.smembers(`card:${cardId}:assignees`));
+			if (assigneesForNotification.length > 0) {
+				const cardTitle =
+					normalizeText(name) || normalizeText(await rdb.hget(`card:${cardId}`, 'name')) || cardId;
+				void notifyDueDateAssigned({
+					boardId,
+					cardId,
+					cardTitle,
+					dueDate: dueDateForNotification,
+					assignees: assigneesForNotification,
+					actorId: userId
+				}).catch((notificationError) => {
+					console.error('failed to create due date notifications', notificationError);
+				});
+			}
+		}
 	}
 
 	return json({ ok: true });

@@ -4,6 +4,7 @@ import { BoardConnector, UserConnector, rdb, type UUID } from '$lib/server/redis
 import { requireBoardAccess } from '$lib/server/boardAccess';
 import type { ShareRole } from '$lib/interfaces/IBoard';
 import { notifyBoardUpdated } from '$lib/server/boardEvents';
+import { createUserNotification } from '$lib/server/notifications';
 
 function normalizeId(value: unknown) {
 	return typeof value === 'string' ? value.trim() : '';
@@ -145,6 +146,7 @@ export const PATCH: RequestHandler = async ({ request }) => {
 	let memberRoleAction: 'sharing.member.updated' | 'sharing.member.removed' | null = null;
 	const historyMessages: string[] = [];
 	const historyMetadata: Record<string, string> = {};
+	let addedMemberNotification: { userId: string; role: ShareRole } | null = null;
 
 	if (defaultRole) {
 		updateOps.push(rdb.hset(`board:${boardId}`, { share_default_role: defaultRole }));
@@ -157,6 +159,12 @@ export const PATCH: RequestHandler = async ({ request }) => {
 		if (memberUserId === board.owner) {
 			throw error(400, 'Cannot modify owner role');
 		}
+
+		const previousRole: ShareRole | null = board.editors?.includes(memberUserId)
+			? 'editor'
+			: board.viewers?.includes(memberUserId)
+				? 'viewer'
+				: null;
 
 		const targetUser = await UserConnector.get(memberUserId as UUID);
 		if (!targetUser) {
@@ -187,6 +195,12 @@ export const PATCH: RequestHandler = async ({ request }) => {
 			memberRoleAction = 'sharing.member.updated';
 			historyMessages.push(`Set "${targetUserLabel}" role to "${normalizedMemberRole}".`);
 			historyMetadata.memberRole = normalizedMemberRole;
+			if (!previousRole) {
+				addedMemberNotification = {
+					userId: memberUserId,
+					role: normalizedMemberRole
+				};
+			}
 		}
 	}
 
@@ -211,6 +225,20 @@ export const PATCH: RequestHandler = async ({ request }) => {
 			metadata: historyMetadata
 		}
 	});
+
+	if (addedMemberNotification && addedMemberNotification.userId !== requesterId) {
+		void createUserNotification({
+			userId: addedMemberNotification.userId,
+			type: 'board.added',
+			title: `Added to board "${board.name}"`,
+			message: `You were added to "${board.name}" as ${addedMemberNotification.role}.`,
+			boardId,
+			boardName: board.name,
+			actorId: requesterId
+		}).catch((notificationError) => {
+			console.error('failed to create board added notification', notificationError);
+		});
+	}
 
 	return json({ ok: true });
 };
