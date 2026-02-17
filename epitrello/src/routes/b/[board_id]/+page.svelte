@@ -191,7 +191,7 @@
 	);
 
 	function userMatchTokens(member: BoardMember | null, includeCurrentUser = false) {
-		const tokens = new Set<string>();
+		const tokens = new SvelteSet<string>();
 		const addToken = (value: string) => {
 			const normalized = value.trim().toLowerCase();
 			if (normalized) tokens.add(normalized);
@@ -1316,7 +1316,7 @@
 {#if ready}
 	<UserSearchBar />
 	<div
-		class="min-h-[calc(100vh-4rem)] w-screen bg-gradient-to-br from-slate-900 via-slate-800 to-sky-900 p-3"
+		class="min-h-[calc(100vh-4rem)] w-screen bg-linear-to-br from-slate-900 via-slate-800 to-sky-900 p-3"
 	>
 		<div
 			class="mb-3 flex items-center gap-3 rounded-xl border border-sky-300/30 bg-slate-800/70 p-3 shadow-md shadow-slate-950/50 backdrop-blur-sm"
@@ -1381,7 +1381,7 @@
 				class="mb-2 mx-2 rounded-xl border border-sky-300/20 bg-slate-800/65 px-3 py-2 text-slate-100 shadow-sm shadow-slate-950/40"
 			>
 				<div class="flex flex-wrap items-end gap-2">
-					<div class="flex min-w-[180px] flex-col gap-1">
+					<div class="flex min-w-45 flex-col gap-1">
 						<label
 							for="board-filter-assignee"
 							class="select-none text-[11px] font-semibold uppercase tracking-wide text-slate-300"
@@ -1401,7 +1401,7 @@
 						</select>
 					</div>
 
-					<div class="flex min-w-[120px] flex-col gap-1">
+					<div class="flex min-w-30 flex-col gap-1">
 						<label
 							for="board-filter-due-op"
 							class="select-none text-[11px] font-semibold uppercase tracking-wide text-slate-300"
@@ -1423,7 +1423,7 @@
 						</select>
 					</div>
 
-					<div class="flex min-w-[170px] flex-col gap-1">
+					<div class="flex min-w-42.5 flex-col gap-1">
 						<label
 							for="board-filter-due-date"
 							class="select-none text-[11px] font-semibold uppercase tracking-wide text-slate-300"
@@ -1433,12 +1433,12 @@
 						<input
 							id="board-filter-due-date"
 							type="date"
-							class="hover:cursor-pointer rounded-md border border-slate-500/70 bg-slate-700/80 px-2 py-1 text-sm text-slate-100 [color-scheme:dark]"
+							class="hover:cursor-pointer rounded-md border border-slate-500/70 bg-slate-700/80 px-2 py-1 text-sm text-slate-100 scheme-dark"
 							bind:value={dueDateFilterValue}
 						/>
 					</div>
 
-					<div class="flex min-w-[160px] flex-col gap-1">
+					<div class="flex min-w-40 flex-col gap-1">
 						<label
 							for="board-filter-tag"
 							class="select-none text-[11px] font-semibold uppercase tracking-wide text-slate-300"
@@ -1483,7 +1483,7 @@
 			{#each visibleLists as list, i (list.uuid ?? i)}
 				{#if canDragAndDrop && listDropPreviewIndex === i}
 					<div
-						class={`min-w-[220px] self-stretch rounded-xl border-2 border-dashed border-sky-300/70 bg-sky-400/20 ${draggedListIndex === null ? 'pointer-events-none' : ''}`}
+						class={`min-w-55 self-stretch rounded-xl border-2 border-dashed border-sky-300/70 bg-sky-400/20 ${draggedListIndex === null ? 'pointer-events-none' : ''}`}
 						role="group"
 						aria-label="List drop preview"
 						ondragover={(event) => handleListPreviewDragOver(i, event)}
@@ -1491,7 +1491,7 @@
 					></div>
 				{/if}
 				<div
-					class="group/list relative flex min-w-[220px] flex-col rounded-xl border border-sky-300/20 bg-slate-800/70 p-3 text-slate-100 shadow-md shadow-slate-950/50 backdrop-blur-sm"
+					class="group/list relative flex min-w-55 flex-col rounded-xl border border-sky-300/20 bg-slate-800/70 p-3 text-slate-100 shadow-md shadow-slate-950/50 backdrop-blur-sm"
 					role="group"
 					draggable={canDragAndDrop}
 					ondragstart={(event) => handleListDragStart(i, event)}
@@ -1615,7 +1615,7 @@
 			{/each}
 			{#if canDragAndDrop && listDropPreviewIndex === lists.length}
 				<div
-					class={`min-w-[220px] self-stretch rounded-xl border-2 border-dashed border-sky-300/70 bg-sky-400/20 ${draggedListIndex === null ? 'pointer-events-none' : ''}`}
+					class={`min-w-55 self-stretch rounded-xl border-2 border-dashed border-sky-300/70 bg-sky-400/20 ${draggedListIndex === null ? 'pointer-events-none' : ''}`}
 					role="group"
 					aria-label="List drop preview"
 					ondragover={(event) => handleListPreviewDragOver(lists.length, event)}
@@ -1625,7 +1625,7 @@
 
 			{#if canEdit}
 				<div
-					class="min-w-[220px] rounded-xl border border-dashed border-sky-300/35 bg-slate-800/55 p-3 text-slate-100 shadow-md shadow-slate-950/40 backdrop-blur-sm"
+					class="min-w-55 rounded-xl border border-dashed border-sky-300/35 bg-slate-800/55 p-3 text-slate-100 shadow-md shadow-slate-950/40 backdrop-blur-sm"
 				>
 					<form
 						onsubmit={(event) => {
@@ -1819,7 +1819,7 @@
 							<button
 								type="submit"
 								disabled={!canEdit || !editorSelectedAssignee}
-								class="h-8 w-16 min-w-[4rem] shrink-0 cursor-pointer whitespace-nowrap rounded-md bg-sky-600 px-2 py-1 text-center text-xs font-semibold text-white shadow-md shadow-sky-900/50 transition-all hover:bg-sky-500 active:translate-y-px"
+								class="h-8 w-16 min-w-16 shrink-0 cursor-pointer whitespace-nowrap rounded-md bg-sky-600 px-2 py-1 text-center text-xs font-semibold text-white shadow-md shadow-sky-900/50 transition-all hover:bg-sky-500 active:translate-y-px"
 							>
 								+ Add
 							</button>
@@ -1863,7 +1863,7 @@
 						>
 							<input
 								type="date"
-								class="min-w-0 flex-1 appearance-none rounded-md border border-slate-600 bg-slate-800/80 px-2 py-1 text-sm text-slate-100 focus:border-sky-400 focus:outline-none [color-scheme:dark] [&::-webkit-calendar-picker-indicator]:m-0 [&::-webkit-calendar-picker-indicator]:h-0 [&::-webkit-calendar-picker-indicator]:w-0 [&::-webkit-calendar-picker-indicator]:opacity-0"
+								class="min-w-0 flex-1 appearance-none rounded-md border border-slate-600 bg-slate-800/80 px-2 py-1 text-sm text-slate-100 focus:border-sky-400 focus:outline-none scheme-dark [&::-webkit-calendar-picker-indicator]:m-0 [&::-webkit-calendar-picker-indicator]:h-0 [&::-webkit-calendar-picker-indicator]:w-0 [&::-webkit-calendar-picker-indicator]:opacity-0"
 								value={editorDueDate}
 								disabled={!canEdit}
 								oninput={handleEditorDueDateInput}
@@ -1871,7 +1871,7 @@
 							<button
 								type="submit"
 								disabled={!canEdit}
-								class="h-8 w-16 min-w-[4rem] shrink-0 cursor-pointer whitespace-nowrap rounded-md bg-sky-600 px-2 py-1 text-center text-xs font-semibold text-white shadow-md shadow-sky-900/50 transition-all hover:bg-sky-500 active:translate-y-px"
+								class="h-8 w-16 min-w-16 shrink-0 cursor-pointer whitespace-nowrap rounded-md bg-sky-600 px-2 py-1 text-center text-xs font-semibold text-white shadow-md shadow-sky-900/50 transition-all hover:bg-sky-500 active:translate-y-px"
 							>
 								Set
 							</button>
@@ -1920,7 +1920,7 @@
 							<button
 								type="submit"
 								disabled={!canEdit}
-								class="h-8 w-16 min-w-[4rem] shrink-0 cursor-pointer whitespace-nowrap rounded-md bg-sky-600 px-2 py-1 text-center text-xs font-semibold text-white shadow-md shadow-sky-900/50 transition-all hover:bg-sky-500 active:translate-y-px"
+								class="h-8 w-16 min-w-16 shrink-0 cursor-pointer whitespace-nowrap rounded-md bg-sky-600 px-2 py-1 text-center text-xs font-semibold text-white shadow-md shadow-sky-900/50 transition-all hover:bg-sky-500 active:translate-y-px"
 							>
 								+ Add
 							</button>
@@ -1932,7 +1932,7 @@
 	{/if}
 {:else}
 	<div
-		class="flex min-h-[calc(100vh-4rem)] w-screen items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-sky-900"
+		class="flex min-h-[calc(100vh-4rem)] w-screen items-center justify-center bg-linear-to-br from-slate-900 via-slate-800 to-sky-900"
 	>
 		<p
 			class="rounded-md border border-sky-300/30 bg-slate-900/85 px-3 py-1.5 text-sm text-slate-100 shadow-sm shadow-slate-950/60"
