@@ -1,9 +1,10 @@
 import type { RequestHandler } from './$types';
 import { json, error } from '@sveltejs/kit';
-import { getFullBoard, rdb } from '$lib/server/redisConnector';
+import { getFullBoard, rdb, UserConnector } from '$lib/server/redisConnector';
 import { canEditBoard, canManageBoard, requireBoardAccess } from '$lib/server/boardAccess';
 
 type UUID = string;
+type MemberRole = 'owner' | 'editor' | 'viewer';
 
 export const GET: RequestHandler = async ({ url }) => {
 	const boardId = url.searchParams.get('boardId');
@@ -16,7 +17,7 @@ export const GET: RequestHandler = async ({ url }) => {
 		throw error(400, 'userId required');
 	}
 
-	const { role } = await requireBoardAccess(boardId as UUID, userId, 'view');
+	const { role, board } = await requireBoardAccess(boardId as UUID, userId, 'view');
 
 	const full = await getFullBoard(boardId as UUID);
 	if (!full) {
@@ -63,13 +64,38 @@ export const GET: RequestHandler = async ({ url }) => {
 		})
 	);
 
+	const editorSet = new Set((board.editors ?? []).filter((memberId) => memberId !== board.owner));
+	const viewerSet = new Set((board.viewers ?? []).filter((memberId) => memberId !== board.owner));
+	for (const editorId of editorSet) {
+		viewerSet.delete(editorId);
+	}
+
+	const memberEntries = [
+		{ userId: board.owner, role: 'owner' as MemberRole },
+		...Array.from(editorSet).map((memberId) => ({ userId: memberId, role: 'editor' as MemberRole })),
+		...Array.from(viewerSet).map((memberId) => ({ userId: memberId, role: 'viewer' as MemberRole }))
+	];
+
+	const members = await Promise.all(
+		memberEntries.map(async (entry) => {
+			const user = await UserConnector.get(entry.userId as UUID);
+			return {
+				userId: entry.userId,
+				role: entry.role,
+				username: user?.username ?? '',
+				email: user?.email ?? ''
+			};
+		})
+	);
+
 	return json({
 		board: {
 			id: full.board.uuid,
 			name: full.board.name,
 			role,
 			canEdit: canEditBoard(role),
-			canManage: canManageBoard(role)
+			canManage: canManageBoard(role),
+			members
 		},
 		lists
 	});

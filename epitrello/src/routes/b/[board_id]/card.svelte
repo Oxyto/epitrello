@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
 
-	const { card, listIndex, cardIndex, canEdit = true } = $props();
+	const { card, listIndex, cardIndex, canEdit = true, canDrag = true } = $props();
 
 	const dispatch = createEventDispatcher();
 	const hasMeta = $derived(
@@ -24,7 +24,7 @@
 	}
 
 	function handleDragStart(event: DragEvent) {
-		if (!canEdit) {
+		if (!canEdit || !canDrag) {
 			event.preventDefault();
 			return;
 		}
@@ -45,7 +45,7 @@
 	}
 
 	function handleDropOnCard(event: DragEvent) {
-		if (!canEdit) return;
+		if (!canEdit || !canDrag) return;
 		event.preventDefault();
 		const currentTarget = event.currentTarget as HTMLElement | null;
 		const rect = currentTarget?.getBoundingClientRect();
@@ -54,7 +54,7 @@
 	}
 
 	function handleDragOverCard(event: DragEvent) {
-		if (!canEdit) return;
+		if (!canEdit || !canDrag) return;
 		event.preventDefault();
 		const currentTarget = event.currentTarget as HTMLElement | null;
 		const rect = currentTarget?.getBoundingClientRect();
@@ -72,7 +72,7 @@
 </script>
 
 <li
-	draggable={canEdit}
+	draggable={canEdit && canDrag}
 	data-card-item="true"
 	data-list-index={listIndex}
 	data-card-index={cardIndex}

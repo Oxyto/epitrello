@@ -23,6 +23,27 @@
 		cards: UiCard[];
 		newCardTitle: string;
 	};
+
+	type BoardMember = {
+		userId: string;
+		role: 'owner' | 'editor' | 'viewer';
+		username: string;
+		email: string;
+	};
+
+	type CardWithIndex = {
+		card: UiCard;
+		cardIndex: number;
+	};
+
+	type FilteredListView = {
+		uuid?: string;
+		name: string;
+		newCardTitle: string;
+		cards: CardWithIndex[];
+		totalCards: number;
+	};
+
 	type BoardFullResponse = {
 		board: {
 			id: string;
@@ -30,6 +51,7 @@
 			role: 'owner' | 'editor' | 'viewer';
 			canEdit: boolean;
 			canManage: boolean;
+			members: BoardMember[];
 		};
 		lists: Array<{
 			uuid: string;
@@ -78,6 +100,8 @@
 	let ready = $state(false);
 	let board_name = $state('Board');
 	let currentUserId = $state('');
+	let currentUserName = $state('');
+	let currentUserEmail = $state('');
 	let boardRole = $state<'owner' | 'editor' | 'viewer' | null>(null);
 	let canEdit = $state(false);
 	let canManage = $state(false);
@@ -90,6 +114,12 @@
 
 	let lists = $state<UiList[]>([]);
 	let newListName = $state('');
+	let boardMembers = $state<BoardMember[]>([]);
+	let assigneeFilter = $state('all');
+	let dueDateOperator = $state<'none' | 'lt' | 'lte' | 'gt' | 'gte' | 'eq' | 'neq'>('none');
+	let dueDateFilterValue = $state('');
+	let tagFilter = $state('all');
+	let filtersPanelOpen = $state(false);
 	let nextLocalCardId = 1;
 	let selectedCardRef = $state<{ listIndex: number; cardIndex: number } | null>(null);
 	let draggedCardRef = $state<{ listIndex: number; cardIndex: number } | null>(null);
@@ -100,7 +130,7 @@
 	let editorDescription = $state('');
 	let editorDueDate = $state('');
 	let editorNewTag = $state('');
-	let editorNewAssignee = $state('');
+	let editorSelectedAssignee = $state('');
 	let boardEventsSource = $state<EventSource | null>(null);
 	let realtimeReloadTimer = $state<ReturnType<typeof setTimeout> | null>(null);
 	let realtimeReloadInFlight = $state(false);
@@ -114,6 +144,150 @@
 		selectedCardRef && selectedList && selectedList.cards[selectedCardRef.cardIndex]
 			? selectedList.cards[selectedCardRef.cardIndex]
 			: null
+	);
+
+	const hasActiveFilters = $derived(
+		assigneeFilter !== 'all' ||
+			(dueDateOperator !== 'none' && dueDateFilterValue.trim().length > 0) ||
+			tagFilter !== 'all'
+	);
+
+	const canDragAndDrop = $derived(canEdit && !hasActiveFilters);
+
+	const allTags = $derived(
+		Array.from(
+			new Set(
+				lists.flatMap((list) => list.cards.flatMap((card) => card.tags.map((tag) => tag.trim())))
+			)
+		)
+			.filter((tag) => tag.length > 0)
+			.sort((left, right) => left.localeCompare(right))
+	);
+
+	function memberLabel(member: BoardMember) {
+		return member.username || member.email || member.userId;
+	}
+
+	function assigneeMatchesMember(assignee: string, member: BoardMember) {
+		const normalizedAssignee = assignee.trim().toLowerCase();
+		if (!normalizedAssignee) return false;
+		const memberTokens = userMatchTokens(member);
+		return memberTokens.has(normalizedAssignee);
+	}
+
+	function isMemberAssignedToCard(card: UiCard, member: BoardMember) {
+		return card.assignees.some((assignee) => assigneeMatchesMember(assignee, member));
+	}
+
+	function assigneeLabel(assignee: string) {
+		const member = boardMembers.find((entry) => assigneeMatchesMember(assignee, entry));
+		return member ? memberLabel(member) : assignee;
+	}
+
+	const availableAssigneeMembers = $derived<BoardMember[]>(
+		selectedCard
+			? boardMembers.filter((member) => !isMemberAssignedToCard(selectedCard, member))
+			: boardMembers
+	);
+
+	function userMatchTokens(member: BoardMember | null, includeCurrentUser = false) {
+		const tokens = new Set<string>();
+		const addToken = (value: string) => {
+			const normalized = value.trim().toLowerCase();
+			if (normalized) tokens.add(normalized);
+		};
+
+		if (member) {
+			addToken(member.userId);
+			addToken(member.username);
+			addToken(member.email);
+		}
+
+		if (includeCurrentUser) {
+			addToken(currentUserId);
+			addToken(currentUserName);
+			addToken(currentUserEmail);
+		}
+		return tokens;
+	}
+
+	function cardMatchesAssigneeFilter(card: UiCard) {
+		if (assigneeFilter === 'all') {
+			return true;
+		}
+
+		const assignees = card.assignees.map((entry) => entry.trim().toLowerCase()).filter(Boolean);
+		if (assignees.length === 0) {
+			return false;
+		}
+
+		if (assigneeFilter === 'me') {
+			const meMember = boardMembers.find((member) => member.userId === currentUserId) ?? null;
+			const meTokens = userMatchTokens(meMember, true);
+			return assignees.some((assignee) => meTokens.has(assignee));
+		}
+
+		if (!assigneeFilter.startsWith('member:')) {
+			return true;
+		}
+
+		const memberId = assigneeFilter.slice('member:'.length);
+		const member = boardMembers.find((entry) => entry.userId === memberId) ?? null;
+		const memberTokens = userMatchTokens(member);
+		return assignees.some((assignee) => memberTokens.has(assignee));
+	}
+
+	function cardMatchesTagFilter(card: UiCard) {
+		if (tagFilter === 'all') {
+			return true;
+		}
+		return card.tags.some((tag) => tag.trim().toLowerCase() === tagFilter.toLowerCase());
+	}
+
+	function cardMatchesDueDateFilter(card: UiCard) {
+		const filterDate = dueDateFilterValue.trim();
+		if (dueDateOperator === 'none' || !filterDate) {
+			return true;
+		}
+		const cardDate = card.dueDate.trim();
+		if (!cardDate) {
+			return false;
+		}
+
+		switch (dueDateOperator) {
+			case 'lt':
+				return cardDate < filterDate;
+			case 'lte':
+				return cardDate <= filterDate;
+			case 'gt':
+				return cardDate > filterDate;
+			case 'gte':
+				return cardDate >= filterDate;
+			case 'eq':
+				return cardDate === filterDate;
+			case 'neq':
+				return cardDate !== filterDate;
+			default:
+				return true;
+		}
+	}
+
+	function cardMatchesFilters(card: UiCard) {
+		return (
+			cardMatchesAssigneeFilter(card) && cardMatchesDueDateFilter(card) && cardMatchesTagFilter(card)
+		);
+	}
+
+	const visibleLists = $derived<FilteredListView[]>(
+		lists.map((list) => ({
+			uuid: list.uuid,
+			name: list.name,
+			newCardTitle: list.newCardTitle,
+			cards: list.cards
+				.map((card, cardIndex) => ({ card, cardIndex }))
+				.filter((entry) => cardMatchesFilters(entry.card)),
+			totalCards: list.cards.length
+		}))
 	);
 
 	function applyLoadedState(payload: BoardFullResponse) {
@@ -130,6 +304,7 @@
 		boardRole = payload.board.role;
 		canEdit = payload.board.canEdit;
 		canManage = payload.board.canManage;
+		boardMembers = payload.board.members ?? [];
 		let localId = 1;
 
 		const mapped: UiList[] = payload.lists.map((list) => ({
@@ -378,7 +553,7 @@
 				return;
 			}
 
-			let currentUser: { id?: string } | null = null;
+			let currentUser: { id?: string; name?: string; email?: string } | null = null;
 			try {
 				currentUser = JSON.parse(raw);
 			} catch {
@@ -394,6 +569,8 @@
 			}
 
 			currentUserId = currentUser.id;
+			currentUserName = currentUser.name ?? '';
+			currentUserEmail = currentUser.email ?? '';
 			board_name = data.board?.name ?? board_name;
 
 			const inviteToken = new URL(window.location.href).searchParams.get('invite') ?? '';
@@ -637,7 +814,7 @@
 		editorDescription = card.description ?? '';
 		editorDueDate = card.dueDate ?? '';
 		editorNewTag = '';
-		editorNewAssignee = '';
+		editorSelectedAssignee = '';
 	}
 
 	function closeDetails() {
@@ -645,7 +822,7 @@
 		editorDescription = '';
 		editorDueDate = '';
 		editorNewTag = '';
-		editorNewAssignee = '';
+		editorSelectedAssignee = '';
 	}
 
 	function getSelectedCardContext() {
@@ -799,7 +976,7 @@
 	function handleDragStart(
 		event: CustomEvent<{ listIndex: number; cardIndex: number; height?: number | null }>
 	) {
-		if (!canEdit) return;
+		if (!canDragAndDrop) return;
 		const { listIndex, cardIndex, height } = event.detail;
 		draggedCardRef = { listIndex, cardIndex };
 		draggedCardHeight = height && height > 0 ? height : 56;
@@ -814,7 +991,7 @@
 	}
 
 	function handleListDragStart(index: number, event: DragEvent) {
-		if (!canEdit) {
+		if (!canDragAndDrop) {
 			event.preventDefault();
 			return;
 		}
@@ -862,7 +1039,7 @@
 	}
 
 	async function handleListDrop(targetIndex: number, event: DragEvent) {
-		if (!canEdit) return;
+		if (!canDragAndDrop) return;
 		if (draggedListIndex === null) return;
 		event.preventDefault();
 
@@ -887,7 +1064,7 @@
 	}
 
 	async function handleListPreviewDrop(insertIndex: number, event: DragEvent) {
-		if (!canEdit) return;
+		if (!canDragAndDrop) return;
 		if (draggedListIndex === null) return;
 		event.preventDefault();
 
@@ -903,7 +1080,7 @@
 	function handleCardDragOver(
 		event: CustomEvent<{ listIndex: number; cardIndex: number; dropAfter: boolean }>
 	) {
-		if (!canEdit) return;
+		if (!canDragAndDrop) return;
 		if (!draggedCardRef) return;
 		const { listIndex, cardIndex, dropAfter } = event.detail;
 		const targetIndex = cardIndex + (dropAfter ? 1 : 0);
@@ -932,7 +1109,7 @@
 	}
 
 	function handleCardListDragOver(listIndex: number, event: DragEvent) {
-		if (!canEdit) return;
+		if (!canDragAndDrop) return;
 		if (!draggedCardRef || !lists[listIndex]) return;
 		event.preventDefault();
 		const targetIndex = getCardInsertIndexFromPointer(listIndex, event);
@@ -942,7 +1119,7 @@
 	async function handleDropOnCard(
 		event: CustomEvent<{ listIndex: number; cardIndex: number; dropAfter: boolean }>
 	) {
-		if (!canEdit) return;
+		if (!canDragAndDrop) return;
 		if (!draggedCardRef) return;
 		const { listIndex, cardIndex, dropAfter } = event.detail;
 		const targetIndex = cardIndex + (dropAfter ? 1 : 0);
@@ -963,7 +1140,7 @@
 	}
 
 	async function handleDropOnList(listIndex: number, event: DragEvent) {
-		if (!canEdit) return;
+		if (!canDragAndDrop) return;
 		if (!draggedCardRef || !lists[listIndex]) return;
 		event.preventDefault();
 		const targetIndex = getCardInsertIndexFromPointer(listIndex, event);
@@ -1049,23 +1226,25 @@
 
 	async function addEditorAssignee() {
 		if (!canEdit) return;
-		const assignee = editorNewAssignee.trim();
-		if (!assignee) return;
+		const memberId = editorSelectedAssignee.trim();
+		if (!memberId) return;
 
 		const context = getSelectedCardContext();
 		if (!context) return;
 
-		if (
-			context.card.assignees.some(
-				(existingAssignee) => existingAssignee.toLowerCase() === assignee.toLowerCase()
-			)
-		) {
-			editorNewAssignee = '';
+		const member = boardMembers.find((entry) => entry.userId === memberId);
+		if (!member) {
+			editorSelectedAssignee = '';
 			return;
 		}
 
-		context.card.assignees = [...context.card.assignees, assignee];
-		editorNewAssignee = '';
+		if (isMemberAssignedToCard(context.card, member)) {
+			editorSelectedAssignee = '';
+			return;
+		}
+
+		context.card.assignees = [...context.card.assignees, memberLabel(member)];
+		editorSelectedAssignee = '';
 		await persistCardFields(context.card.uuid, { assignees: context.card.assignees });
 	}
 
@@ -1160,6 +1339,15 @@
 			>
 				Activity
 			</button>
+			<button
+				type="button"
+				onclick={() => (filtersPanelOpen = !filtersPanelOpen)}
+				class="hover:cursor-pointer rounded-md border border-sky-300/25 bg-slate-700/75 px-3 py-2 text-sm font-semibold text-slate-100 transition-colors hover:bg-slate-600/90"
+				aria-expanded={filtersPanelOpen}
+				aria-controls="board-filters-panel"
+			>
+				Filter
+			</button>
 			{#if boardId && canManage}
 				<a
 					href={resolve(`/b/${boardId}/settings`)}
@@ -1187,10 +1375,113 @@
 			Role: {boardRole ?? 'unknown'}
 			{canEdit ? '(editor access)' : '(read only)'}
 		</p>
+		{#if filtersPanelOpen}
+			<div
+				id="board-filters-panel"
+				class="mb-2 mx-2 rounded-xl border border-sky-300/20 bg-slate-800/65 px-3 py-2 text-slate-100 shadow-sm shadow-slate-950/40"
+			>
+				<div class="flex flex-wrap items-end gap-2">
+					<div class="flex min-w-[180px] flex-col gap-1">
+						<label
+							for="board-filter-assignee"
+							class="select-none text-[11px] font-semibold uppercase tracking-wide text-slate-300"
+						>
+							Assignee
+						</label>
+						<select
+							id="board-filter-assignee"
+							class="hover:cursor-pointer rounded-md border border-slate-500/70 bg-slate-700/80 px-2 py-1 text-sm text-slate-100"
+							bind:value={assigneeFilter}
+						>
+							<option value="all">Toutes</option>
+							<option value="me">Moi</option>
+							{#each boardMembers as member (member.userId)}
+								<option value={`member:${member.userId}`}>{memberLabel(member)}</option>
+							{/each}
+						</select>
+					</div>
+
+					<div class="flex min-w-[120px] flex-col gap-1">
+						<label
+							for="board-filter-due-op"
+							class="select-none text-[11px] font-semibold uppercase tracking-wide text-slate-300"
+						>
+							Due Date
+						</label>
+						<select
+							id="board-filter-due-op"
+							class="hover:cursor-pointer rounded-md border border-slate-500/70 bg-slate-700/80 px-2 py-1 text-sm text-slate-100"
+							bind:value={dueDateOperator}
+						>
+							<option value="none">Toutes</option>
+							<option value="lt">&lt;</option>
+							<option value="lte">&lt;=</option>
+							<option value="gt">&gt;</option>
+							<option value="gte">&gt;=</option>
+							<option value="eq">==</option>
+							<option value="neq">~=</option>
+						</select>
+					</div>
+
+					<div class="flex min-w-[170px] flex-col gap-1">
+						<label
+							for="board-filter-due-date"
+							class="select-none text-[11px] font-semibold uppercase tracking-wide text-slate-300"
+						>
+							Date
+						</label>
+						<input
+							id="board-filter-due-date"
+							type="date"
+							class="hover:cursor-pointer rounded-md border border-slate-500/70 bg-slate-700/80 px-2 py-1 text-sm text-slate-100 [color-scheme:dark]"
+							bind:value={dueDateFilterValue}
+						/>
+					</div>
+
+					<div class="flex min-w-[160px] flex-col gap-1">
+						<label
+							for="board-filter-tag"
+							class="select-none text-[11px] font-semibold uppercase tracking-wide text-slate-300"
+						>
+							Tag
+						</label>
+						<select
+							id="board-filter-tag"
+							class="hover:cursor-pointer rounded-md border border-slate-500/70 bg-slate-700/80 px-2 py-1 text-sm text-slate-100"
+							bind:value={tagFilter}
+						>
+							<option value="all">Tous</option>
+							{#each allTags as tag (tag)}
+								<option value={tag}>{tag}</option>
+							{/each}
+						</select>
+					</div>
+
+					<button
+						type="button"
+						class="hover:cursor-pointer mb-0.5 h-9 rounded-md border border-slate-400/60 bg-slate-700/80 px-3 text-xs font-semibold text-slate-100 transition-colors hover:bg-slate-600/90"
+						onclick={() => {
+							assigneeFilter = 'all';
+							dueDateOperator = 'none';
+							dueDateFilterValue = '';
+							tagFilter = 'all';
+						}}
+						disabled={!hasActiveFilters}
+					>
+						Reset
+					</button>
+				</div>
+				{#if hasActiveFilters}
+					<p class="mt-2 text-xs text-amber-200">
+						Filtre actif: le drag and drop est temporairement désactivé.
+					</p>
+				{/if}
+			</div>
+		{/if}
 
 		<div class="flex gap-3 overflow-x-auto px-2 py-3">
-			{#each lists as list, i (list.uuid ?? i)}
-				{#if listDropPreviewIndex === i}
+			{#each visibleLists as list, i (list.uuid ?? i)}
+				{#if canDragAndDrop && listDropPreviewIndex === i}
 					<div
 						class={`min-w-[220px] self-stretch rounded-xl border-2 border-dashed border-sky-300/70 bg-sky-400/20 ${draggedListIndex === null ? 'pointer-events-none' : ''}`}
 						role="group"
@@ -1202,7 +1493,7 @@
 				<div
 					class="group/list relative flex min-w-[220px] flex-col rounded-xl border border-sky-300/20 bg-slate-800/70 p-3 text-slate-100 shadow-md shadow-slate-950/50 backdrop-blur-sm"
 					role="group"
-					draggable={canEdit}
+					draggable={canDragAndDrop}
 					ondragstart={(event) => handleListDragStart(i, event)}
 					ondragend={handleListDragEnd}
 					ondragover={(event) => handleListDragOver(i, event)}
@@ -1232,6 +1523,7 @@
 					<ol
 						class="mt-3 flex min-h-0 flex-1 flex-col gap-1.5"
 						ondragover={(event) => {
+							if (!canDragAndDrop) return;
 							if (draggedListIndex !== null) {
 								handleListDragOver(i, event);
 								return;
@@ -1239,6 +1531,7 @@
 							handleCardListDragOver(i, event);
 						}}
 						ondrop={(event) => {
+							if (!canDragAndDrop) return;
 							if (draggedListIndex !== null) {
 								void handleListDrop(i, event);
 								return;
@@ -1246,18 +1539,19 @@
 							void handleDropOnList(i, event);
 						}}
 					>
-						{#each list.cards as card, j (card.uuid ?? card.id ?? j)}
-							{#if cardDropPreview && cardDropPreview.listIndex === i && cardDropPreview.targetIndex === j}
+						{#each list.cards as cardRef, j (cardRef.card.uuid ?? cardRef.card.id ?? j)}
+							{#if canDragAndDrop && cardDropPreview && cardDropPreview.listIndex === i && cardDropPreview.targetIndex === j}
 								<li
 									class="pointer-events-none rounded-lg border-2 border-dashed border-sky-300/70 bg-sky-400/20"
 									style={`height: ${draggedCardHeight}px;`}
 								></li>
 							{/if}
 							<Card
-								{card}
+								card={cardRef.card}
 								{canEdit}
+								canDrag={canDragAndDrop}
 								listIndex={i}
-								cardIndex={j}
+								cardIndex={cardRef.cardIndex}
 								on:updateCompleted={handleUpdateCompleted}
 								on:deleteCard={handleDeleteCard}
 								on:openDetails={handleOpenDetails}
@@ -1267,22 +1561,31 @@
 								on:dropOnCard={handleDropOnCard}
 							/>
 						{/each}
-						{#if cardDropPreview && cardDropPreview.listIndex === i && cardDropPreview.targetIndex === list.cards.length}
+						{#if canDragAndDrop && cardDropPreview && cardDropPreview.listIndex === i && cardDropPreview.targetIndex === list.cards.length}
 							<li
 								class="pointer-events-none rounded-lg border-2 border-dashed border-sky-300/70 bg-sky-400/20"
 								style={`height: ${draggedCardHeight}px;`}
 							></li>
+						{/if}
+						{#if list.cards.length === 0}
+							<li class="rounded-md border border-slate-600/40 bg-slate-900/20 px-2 py-2 text-xs text-slate-300">
+								{hasActiveFilters
+									? `Aucune carte ne correspond aux filtres (${list.totalCards} carte(s) au total).`
+									: 'Aucune carte.'}
+							</li>
 						{/if}
 					</ol>
 
 					<form
 						class="mt-2.5 flex gap-1.5"
 						ondragover={(event) => {
+							if (!canDragAndDrop) return;
 							if (draggedListIndex !== null) {
 								handleListDragOver(i, event);
 							}
 						}}
 						ondrop={(event) => {
+							if (!canDragAndDrop) return;
 							if (draggedListIndex !== null) {
 								void handleListDrop(i, event);
 							}
@@ -1310,7 +1613,7 @@
 					</form>
 				</div>
 			{/each}
-			{#if listDropPreviewIndex === lists.length}
+			{#if canDragAndDrop && listDropPreviewIndex === lists.length}
 				<div
 					class={`min-w-[220px] self-stretch rounded-xl border-2 border-dashed border-sky-300/70 bg-sky-400/20 ${draggedListIndex === null ? 'pointer-events-none' : ''}`}
 					role="group"
@@ -1471,7 +1774,7 @@
 
 					<section class="min-w-0">
 						<h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-sky-200">
-							Assignées
+							Assignees
 						</h3>
 						<div class="mb-2 flex flex-wrap gap-1.5">
 							{#if selectedCard.assignees?.length}
@@ -1479,7 +1782,7 @@
 									<span
 										class="inline-flex items-center gap-1 rounded-md bg-slate-700/90 px-2 py-1 text-xs text-slate-100 ring-1 ring-slate-500"
 									>
-										{assignee}
+										{assigneeLabel(assignee)}
 										{#if canEdit}
 											<button
 												type="button"
@@ -1503,21 +1806,27 @@
 								addEditorAssignee();
 							}}
 						>
-							<input
-								type="text"
+							<select
 								class="min-w-0 flex-1 rounded-md border border-slate-600 bg-slate-800/80 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none"
-								placeholder="Add assignee..."
 								disabled={!canEdit}
-								bind:value={editorNewAssignee}
-							/>
+								bind:value={editorSelectedAssignee}
+							>
+								<option value="">Select a board member...</option>
+								{#each availableAssigneeMembers as member (member.userId)}
+									<option value={member.userId}>{memberLabel(member)}</option>
+								{/each}
+							</select>
 							<button
 								type="submit"
-								disabled={!canEdit}
+								disabled={!canEdit || !editorSelectedAssignee}
 								class="h-8 w-16 min-w-[4rem] shrink-0 cursor-pointer whitespace-nowrap rounded-md bg-sky-600 px-2 py-1 text-center text-xs font-semibold text-white shadow-md shadow-sky-900/50 transition-all hover:bg-sky-500 active:translate-y-px"
 							>
 								+ Add
 							</button>
 						</form>
+						{#if availableAssigneeMembers.length === 0}
+							<p class="mt-1 text-xs text-slate-400">All board members are already assigned.</p>
+						{/if}
 					</section>
 
 					<section>

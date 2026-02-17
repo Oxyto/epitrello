@@ -1040,7 +1040,8 @@ describe('api/board-full +server', () => {
 				name: 'Roadmap',
 				role: 'owner',
 				canEdit: true,
-				canManage: true
+				canManage: true,
+				members: [{ userId: 'user-1', role: 'owner', username: '', email: '' }]
 			},
 			lists: [
 				{
