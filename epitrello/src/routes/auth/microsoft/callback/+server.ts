@@ -61,10 +61,7 @@ export const GET: RequestHandler = async ({ url }) => {
 
 		const accessToken = tokenJson.access_token;
 		if (!accessToken) {
-			console.error(
-				'Pas de access_token dans la réponse Microsoft',
-				tokenJson
-			);
+			console.error('Pas de access_token dans la réponse Microsoft', tokenJson);
 			throw redirect(302, '/login?error=microsoft_token');
 		}
 
@@ -101,9 +98,7 @@ export const GET: RequestHandler = async ({ url }) => {
 			throw redirect(302, '/login?error=microsoft_no_email');
 		}
 
-		const username =
-			me.displayName ??
-			(email.includes('@') ? email.split('@')[0] : email);
+		const username = me.displayName ?? (email.includes('@') ? email.split('@')[0] : email);
 
 		let user = await UserConnector.getByEmail(email);
 
@@ -132,9 +127,7 @@ export const GET: RequestHandler = async ({ url }) => {
 		return new Response(
 			`<script>
 				localStorage.setItem('authToken', 'microsoft-' + Date.now());
-				localStorage.setItem('user', ${JSON.stringify(
-					JSON.stringify(safeUser)
-				)});
+				localStorage.setItem('user', ${JSON.stringify(JSON.stringify(safeUser))});
 				window.location.href = '/u/${user.uuid}#profile';
 			</script>`,
 			{

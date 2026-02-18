@@ -1,3 +1,45 @@
 @import 'tailwindcss';
 @plugin '@tailwindcss/forms';
 @plugin '@tailwindcss/typography';
+
+:root {
+	--ep-font-family: 'Segoe UI', 'Noto Sans', 'Helvetica Neue', Arial, sans-serif;
+	--ep-bg-from: #0f172a;
+	--ep-bg-via: #1e293b;
+	--ep-bg-to: #0c4a6e;
+	--ep-surface: rgba(15, 23, 42, 0.72);
+	--ep-surface-strong: rgba(15, 23, 42, 0.9);
+	--ep-border: rgba(125, 211, 252, 0.35);
+	--ep-text: #e2e8f0;
+	--ep-text-muted: #94a3b8;
+	--ep-accent: #0ea5e9;
+	--ep-accent-strong: #0284c7;
+}
+
+html,
+body {
+	min-height: 100%;
+}
+
+body {
+	margin: 0;
+	font-family: var(--ep-font-family);
+	color: var(--ep-text);
+	background: linear-gradient(135deg, var(--ep-bg-from), var(--ep-bg-via), var(--ep-bg-to));
+}
+
+a {
+	color: inherit;
+}
+
+button,
+input,
+textarea,
+select {
+	font-family: var(--ep-font-family);
+}
+
+/* Normalize legacy mono usage so the whole app keeps the editor font family. */
+.font-mono {
+	font-family: var(--ep-font-family) !important;
+}

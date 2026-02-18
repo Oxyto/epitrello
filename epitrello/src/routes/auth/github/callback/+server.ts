@@ -81,11 +81,7 @@ export const GET: RequestHandler = async ({ url }) => {
 				const primary = emails.find((e) => e.primary) ?? emails[0];
 				if (primary?.email) email = primary.email;
 			} else {
-				console.warn(
-					'GitHub emails non OK',
-					emailsRes.status,
-					await emailsRes.text()
-				);
+				console.warn('GitHub emails non OK', emailsRes.status, await emailsRes.text());
 			}
 		} catch (err) {
 			console.warn('Erreur en récupérant les emails GitHub', err);
@@ -120,9 +116,7 @@ export const GET: RequestHandler = async ({ url }) => {
 		return new Response(
 			`<script>
 				localStorage.setItem('authToken', 'github-' + Date.now());
-				localStorage.setItem('user', ${JSON.stringify(
-					JSON.stringify(safeUser)
-				)});
+				localStorage.setItem('user', ${JSON.stringify(JSON.stringify(safeUser))});
 				window.location.href = '/u/${user.uuid}#profile';
 			</script>`,
 			{

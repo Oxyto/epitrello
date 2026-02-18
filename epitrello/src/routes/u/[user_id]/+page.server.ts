@@ -11,19 +11,41 @@ export const load: PageServerLoad = async ({ params }) => {
 		throw error(404, 'User not found');
 	}
 
-	const boards = await BoardConnector.getAllByOwnerId(userId);
+	const [ownedBoards, sharedBoards] = await Promise.all([
+		BoardConnector.getAllByOwnerId(userId),
+		BoardConnector.getAllSharedByUserId(userId)
+	]);
 
-	const slimBoards =
-		boards?.map((b) => ({
-			uuid: b!.uuid,
-			name: b!.name,
-			owner: b!.owner
+	const slimOwnedBoards =
+		ownedBoards?.map((board) => ({
+			uuid: board.uuid,
+			name: board.name,
+			owner: board.owner,
+			role: 'owner' as const
 		})) ?? [];
+
+	const filteredSharedBoards = (sharedBoards ?? []).filter((board) => board.owner !== userId);
+	const ownerIds = Array.from(new Set(filteredSharedBoards.map((board) => board.owner)));
+	const ownerEntries = await Promise.all(
+		ownerIds.map(async (ownerId) => [ownerId, await UserConnector.get(ownerId)] as const)
+	);
+	const ownerNameById = new Map(
+		ownerEntries.map(([ownerId, owner]) => [ownerId, owner?.username ?? 'Unknown'])
+	);
+
+	const slimSharedBoards = filteredSharedBoards.map((board) => ({
+		uuid: board.uuid,
+		name: board.name,
+		owner: board.owner,
+		ownerName: ownerNameById.get(board.owner) ?? 'Unknown',
+		role: board.editors?.includes(userId) ? ('editor' as const) : ('viewer' as const)
+	}));
 
 	return {
 		user_id: user.uuid,
 		email: user.email,
 		name: user.username ?? null,
-		boards: slimBoards
+		ownedBoards: slimOwnedBoards,
+		sharedBoards: slimSharedBoards
 	};
 };
