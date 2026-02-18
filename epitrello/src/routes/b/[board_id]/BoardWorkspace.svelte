@@ -788,6 +788,7 @@
 					{/if}
 					<Card
 						card={cardRef.card}
+						{boardMembers}
 						{canEdit}
 						canDrag={canDragAndDrop}
 						listIndex={i}

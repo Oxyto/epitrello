@@ -243,7 +243,12 @@ export const POST: RequestHandler = async ({ request }) => {
 				history: {
 					action: 'card.created',
 					message: `Created card "${normalizedTitle}".`,
-					metadata: { cardId, listId: String(listId), title: normalizedTitle }
+					metadata: {
+						cardId,
+						cardName: normalizedTitle,
+						listId: String(listId),
+						title: normalizedTitle
+					}
 				}
 			});
 		}
@@ -297,12 +302,14 @@ export const PATCH: RequestHandler = async ({ request }) => {
 		await requireBoardAccess(boardId as UUID, userId, 'edit');
 	}
 
+	const normalizedName = typeof name === 'string' ? name.trim() : '';
+	const previousCardName = normalizeText(await rdb.hget(`card:${cardId}`, 'name'));
 	const changedFields: string[] = [];
 	let normalizedAssigneesForNotification: string[] | null = null;
 	let dueDateForNotification: string | null = null;
 
 	if (typeof name === 'string') {
-		await rdb.hset(`card:${cardId}`, { name });
+		await rdb.hset(`card:${cardId}`, { name: normalizedName });
 		changedFields.push('title');
 	}
 
@@ -340,6 +347,8 @@ export const PATCH: RequestHandler = async ({ request }) => {
 	}
 
 	let movedCard = false;
+	let fromListName = '';
+	let toListName = '';
 
 	if (fromListId && toListId && Number.isInteger(targetIndex)) {
 		await reorderCard(cardId, fromListId, toListId, Number(targetIndex));
@@ -352,8 +361,18 @@ export const PATCH: RequestHandler = async ({ request }) => {
 		movedCard = true;
 		changedFields.push('list');
 	}
+
+	if (movedCard && fromListId && toListId) {
+		const [resolvedFromListName, resolvedToListName] = await Promise.all([
+			normalizeText(await rdb.hget(`list:${fromListId}`, 'name')),
+			normalizeText(await rdb.hget(`list:${toListId}`, 'name'))
+		]);
+		fromListName = resolvedFromListName;
+		toListName = resolvedToListName;
+	}
+
 	if (boardId) {
-		const normalizedName = typeof name === 'string' ? name.trim() : '';
+		const cardDisplayName = normalizedName || previousCardName || cardId;
 		const action =
 			movedCard && changedFields.length === 1
 				? 'card.moved'
@@ -365,14 +384,16 @@ export const PATCH: RequestHandler = async ({ request }) => {
 
 		const message =
 			action === 'card.renamed' && normalizedName
-				? `Renamed a card to "${normalizedName}".`
+				? `Renamed card to "${cardDisplayName}".`
 				: action === 'card.moved' && movedCard && fromListId && toListId
 					? fromListId === toListId
-						? `Reordered card "${cardId}".`
-						: `Moved card "${cardId}" to another list.`
+						? `Reordered card "${cardDisplayName}".`
+						: toListName
+							? `Moved card "${cardDisplayName}" to list "${toListName}".`
+							: `Moved card "${cardDisplayName}" to another list.`
 					: changedFields.length > 0
-						? `Updated card "${cardId}" (${changedFields.join(', ')}).`
-						: `Updated card "${cardId}".`;
+						? `Updated card "${cardDisplayName}" (${changedFields.join(', ')}).`
+						: `Updated card "${cardDisplayName}".`;
 
 		notifyBoardUpdated({
 			boardId,
@@ -383,8 +404,11 @@ export const PATCH: RequestHandler = async ({ request }) => {
 				message,
 				metadata: {
 					cardId,
+					cardName: cardDisplayName,
 					...(fromListId ? { fromListId } : {}),
-					...(toListId ? { toListId } : {})
+					...(fromListName ? { fromListName } : {}),
+					...(toListId ? { toListId } : {}),
+					...(toListName ? { toListName } : {})
 				}
 			}
 		});
@@ -394,7 +418,7 @@ export const PATCH: RequestHandler = async ({ request }) => {
 				normalizedAssigneesForNotification ?? (await rdb.smembers(`card:${cardId}:assignees`));
 			if (assigneesForNotification.length > 0) {
 				const cardTitle =
-					normalizeText(name) || normalizeText(await rdb.hget(`card:${cardId}`, 'name')) || cardId;
+					cardDisplayName || normalizeText(await rdb.hget(`card:${cardId}`, 'name')) || cardId;
 				void notifyDueDateAssigned({
 					boardId,
 					cardId,
@@ -444,6 +468,7 @@ export const DELETE: RequestHandler = async ({ url, request }) => {
 	}
 
 	try {
+		const cardName = normalizeText(await rdb.hget(`card:${id}`, 'name'));
 		await CardConnector.del(id as UUID);
 		if (boardId) {
 			notifyBoardUpdated({
@@ -452,8 +477,8 @@ export const DELETE: RequestHandler = async ({ url, request }) => {
 				source: 'card',
 				history: {
 					action: 'card.deleted',
-					message: `Deleted card "${id}".`,
-					metadata: { cardId: id }
+					message: `Deleted card "${cardName || id}".`,
+					metadata: { cardId: id, ...(cardName ? { cardName } : {}) }
 				}
 			});
 		}

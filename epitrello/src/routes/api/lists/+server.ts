@@ -4,6 +4,14 @@ import { ListConnector, rdb, type UUID } from '$lib/server/redisConnector';
 import { getBoardIdFromList, requireBoardAccess } from '$lib/server/boardAccess';
 import { notifyBoardUpdated } from '$lib/server/boardEvents';
 
+function normalizeText(value: unknown) {
+	if (typeof value !== 'string') {
+		return '';
+	}
+
+	return value.trim();
+}
+
 export const POST: RequestHandler = async ({ request }) => {
 	const { boardId, name, userId } = await request.json();
 	const normalizedName = typeof name === 'string' ? name.trim() : '';
@@ -53,6 +61,7 @@ export const PATCH: RequestHandler = async ({ request }) => {
 		await requireBoardAccess(boardId as UUID, userId, 'edit');
 	}
 
+	const previousListName = normalizeText(await rdb.hget(`list:${listId}`, 'name'));
 	const updates: Record<string, string | number> = {};
 	if (typeof name === 'string') {
 		updates.name = name;
@@ -69,6 +78,8 @@ export const PATCH: RequestHandler = async ({ request }) => {
 	if (boardId) {
 		const hasNameUpdate = typeof updates.name === 'string';
 		const hasOrderUpdate = typeof updates.order === 'number';
+		const nextListName =
+			normalizeText(hasNameUpdate ? updates.name : previousListName) || String(listId);
 
 		const action =
 			hasNameUpdate && hasOrderUpdate
@@ -81,12 +92,12 @@ export const PATCH: RequestHandler = async ({ request }) => {
 
 		const message =
 			hasNameUpdate && hasOrderUpdate
-				? `Updated list "${updates.name}".`
+				? `Updated list "${nextListName}".`
 				: hasNameUpdate
-					? `Renamed list to "${updates.name}".`
+					? `Renamed list to "${nextListName}".`
 					: hasOrderUpdate
-						? `Reordered list "${listId}".`
-						: `Updated list "${listId}".`;
+						? `Reordered list "${nextListName}".`
+						: `Updated list "${nextListName}".`;
 
 		notifyBoardUpdated({
 			boardId,
@@ -97,7 +108,7 @@ export const PATCH: RequestHandler = async ({ request }) => {
 				message,
 				metadata: {
 					listId: String(listId),
-					...(typeof updates.name === 'string' ? { name: updates.name } : {}),
+					name: nextListName,
 					...(typeof updates.order === 'number' ? { order: String(updates.order) } : {})
 				}
 			}
@@ -125,6 +136,7 @@ export const DELETE: RequestHandler = async ({ url }) => {
 	}
 
 	try {
+		const listName = normalizeText(await rdb.hget(`list:${id}`, 'name'));
 		await ListConnector.del(id as UUID);
 		if (boardId) {
 			notifyBoardUpdated({
@@ -133,8 +145,8 @@ export const DELETE: RequestHandler = async ({ url }) => {
 				source: 'list',
 				history: {
 					action: 'list.deleted',
-					message: `Deleted list "${id}".`,
-					metadata: { listId: id }
+					message: `Deleted list "${listName || id}".`,
+					metadata: { listId: id, ...(listName ? { name: listName } : {}) }
 				}
 			});
 		}

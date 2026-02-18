@@ -44,6 +44,7 @@
 	let realtimeReloadTimer = $state<ReturnType<typeof setTimeout> | null>(null);
 	let realtimeReloadInFlight = $state(false);
 	let realtimeReloadQueued = $state(false);
+	let boardSyncKey = $state('');
 
 	function applyLoadedState(payload: BoardFullResponse) {
 		if (!payload || !payload.board) return;
@@ -72,14 +73,17 @@
 		}));
 	}
 
-	async function loadBoardFull() {
-		if (!browser || !boardId || !currentUserId) return;
+	async function loadBoardFull(targetBoardId: string | undefined = boardId) {
+		if (!browser || !targetBoardId || !currentUserId) return;
 		loadError = '';
 
 		try {
 			const res = await fetch(
-				`/api/board-full?boardId=${boardId}&userId=${encodeURIComponent(currentUserId)}`
+				`/api/board-full?boardId=${targetBoardId}&userId=${encodeURIComponent(currentUserId)}`
 			);
+			if (boardId !== targetBoardId) {
+				return;
+			}
 			if (!res.ok) {
 				loadError = res.status === 403 ? 'Access denied for this board.' : 'Unable to load board.';
 				console.warn('Erreur /api/board-full', await res.text());
@@ -87,15 +91,22 @@
 			}
 
 			const payload = (await res.json()) as BoardFullResponse;
+			if (boardId !== targetBoardId) {
+				return;
+			}
 			applyLoadedState(payload);
 		} catch (err) {
+			if (boardId !== targetBoardId) {
+				return;
+			}
 			loadError = 'Network error while loading board.';
 			console.error('Erreur réseau /api/board-full', err);
 		}
 	}
 
-	async function loadBoardHistory(options: { silent?: boolean } = {}) {
-		if (!browser || !boardId || !currentUserId) return;
+	async function loadBoardHistory(options: { silent?: boolean; boardId?: string } = {}) {
+		const targetBoardId = options.boardId ?? boardId;
+		if (!browser || !targetBoardId || !currentUserId) return;
 
 		const silent = options.silent ?? false;
 		if (!silent) {
@@ -105,11 +116,14 @@
 
 		try {
 			const params = new URLSearchParams({
-				boardId,
+				boardId: targetBoardId,
 				userId: currentUserId,
 				limit: '80'
 			});
 			const res = await fetch(`/api/board-history?${params.toString()}`);
+			if (boardId !== targetBoardId) {
+				return;
+			}
 			if (!res.ok) {
 				if (!silent || historyEntries.length === 0) {
 					historyError =
@@ -122,9 +136,15 @@
 			}
 
 			const payload = (await res.json()) as BoardHistoryResponse;
+			if (boardId !== targetBoardId) {
+				return;
+			}
 			historyEntries = Array.isArray(payload.entries) ? payload.entries : [];
 			historyError = '';
 		} catch (err) {
+			if (boardId !== targetBoardId) {
+				return;
+			}
 			if (!silent || historyEntries.length === 0) {
 				historyError = 'Network error while loading board activity.';
 			}
@@ -291,12 +311,10 @@
 				await tryJoinWithInvite(inviteToken);
 			}
 
-			await Promise.all([loadBoardFull(), loadBoardHistory()]);
 			if (cancelled) {
 				return;
 			}
 
-			startRealtimeSync();
 			ready = true;
 		};
 
@@ -306,6 +324,40 @@
 			cancelled = true;
 			stopRealtimeSync();
 		};
+	});
+
+	$effect(() => {
+		if (!browser || !ready || !boardId || !currentUserId) {
+			return;
+		}
+
+		const nextBoardSyncKey = `${boardId}:${currentUserId}`;
+		if (nextBoardSyncKey === boardSyncKey) {
+			return;
+		}
+		boardSyncKey = nextBoardSyncKey;
+		board_name = data.board?.name ?? board_name;
+		loadError = '';
+		historyError = '';
+		historyEntries = [];
+		historyPanelOpen = false;
+		filtersPanelOpen = false;
+		boardRole = null;
+		canEdit = false;
+		canManage = false;
+		boardMembers = [];
+		lists = [];
+
+		stopRealtimeSync();
+
+		void (async () => {
+			await Promise.all([loadBoardFull(boardId), loadBoardHistory({ boardId })]);
+			if (boardSyncKey !== nextBoardSyncKey) {
+				return;
+			}
+
+			startRealtimeSync();
+		})();
 	});
 
 	async function persistBoardName() {

@@ -1,7 +1,23 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
+	import { assigneeLabel } from './board-filters';
+	import type { BoardMember, UiCard } from './board.types';
 
-	const { card, listIndex, cardIndex, canEdit = true, canDrag = true } = $props();
+	const {
+		card,
+		listIndex,
+		cardIndex,
+		boardMembers = [],
+		canEdit = true,
+		canDrag = true
+	} = $props<{
+		card: UiCard;
+		listIndex: number;
+		cardIndex: number;
+		boardMembers?: BoardMember[];
+		canEdit?: boolean;
+		canDrag?: boolean;
+	}>();
 
 	const dispatch = createEventDispatcher();
 	const hasMeta = $derived(
@@ -68,6 +84,10 @@
 		}
 
 		dispatch('openDetails', { listIndex, cardIndex });
+	}
+
+	function formatAssignee(assignee: string) {
+		return assigneeLabel(assignee, boardMembers);
 	}
 </script>
 
@@ -137,7 +157,9 @@
 			{/if}
 			{#if card.assignees && card.assignees.length}
 				{#each card.assignees as assignee, index (`${assignee}-${index}`)}
-					<span class="rounded-md bg-white/15 px-2 py-0.5 text-slate-100">@{assignee}</span>
+					<span class="rounded-md bg-white/15 px-2 py-0.5 text-slate-100"
+						>@{formatAssignee(assignee)}</span
+					>
 				{/each}
 			{/if}
 		</div>

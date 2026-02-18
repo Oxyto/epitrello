@@ -4,6 +4,14 @@ import { TagConnector, rdb, type UUID } from '$lib/server/redisConnector';
 import { getBoardIdFromCard, requireBoardAccess } from '$lib/server/boardAccess';
 import { notifyBoardUpdated } from '$lib/server/boardEvents';
 
+function normalizeText(value: unknown) {
+	if (typeof value !== 'string') {
+		return '';
+	}
+
+	return value.trim();
+}
+
 export const POST: RequestHandler = async ({ request }) => {
 	const { cardId, name, userId } = await request.json();
 	const normalizedName = typeof name === 'string' ? name.trim() : '';
@@ -24,6 +32,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	try {
 		const tagId = await TagConnector.create(cardId as UUID, normalizedName, 'label', 'gray');
+		const cardName = normalizeText(await rdb.hget(`card:${cardId}`, 'name'));
 
 		await rdb.sadd(`card:${cardId}:tags`, tagId);
 		if (boardId) {
@@ -33,8 +42,12 @@ export const POST: RequestHandler = async ({ request }) => {
 				source: 'tag',
 				history: {
 					action: 'tag.added',
-					message: `Added tag "${normalizedName}" on card "${cardId}".`,
-					metadata: { cardId: String(cardId), tag: normalizedName }
+					message: `Added tag "${normalizedName}" on card "${cardName || cardId}".`,
+					metadata: {
+						cardId: String(cardId),
+						tag: normalizedName,
+						...(cardName ? { cardName } : {})
+					}
 				}
 			});
 		}
@@ -75,6 +88,7 @@ export const DELETE: RequestHandler = async ({ request }) => {
 	}
 
 	try {
+		const cardName = normalizeText(await rdb.hget(`card:${cardId}`, 'name'));
 		const tagIds = await rdb.smembers(`card:${cardId}:tags`);
 
 		for (const tagId of tagIds) {
@@ -92,8 +106,8 @@ export const DELETE: RequestHandler = async ({ request }) => {
 				source: 'tag',
 				history: {
 					action: 'tag.removed',
-					message: `Removed tag "${name}" from card "${cardId}".`,
-					metadata: { cardId, tag: name }
+					message: `Removed tag "${name}" from card "${cardName || cardId}".`,
+					metadata: { cardId, tag: name, ...(cardName ? { cardName } : {}) }
 				}
 			});
 		}
