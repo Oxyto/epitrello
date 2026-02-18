@@ -72,7 +72,10 @@ export const GET: RequestHandler = async ({ url }) => {
 
 	const memberEntries = [
 		{ userId: board.owner, role: 'owner' as MemberRole },
-		...Array.from(editorSet).map((memberId) => ({ userId: memberId, role: 'editor' as MemberRole })),
+		...Array.from(editorSet).map((memberId) => ({
+			userId: memberId,
+			role: 'editor' as MemberRole
+		})),
 		...Array.from(viewerSet).map((memberId) => ({ userId: memberId, role: 'viewer' as MemberRole }))
 	];
 

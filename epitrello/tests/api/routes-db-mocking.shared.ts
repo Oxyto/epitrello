@@ -1,11 +1,39 @@
 import { expect, mock } from 'bun:test';
 
-type MockBoardOwner = { uuid: string } | null;
-type MockBoard = { uuid: string; name: string; owner: string } | null;
+const originalConsoleError = console.error.bind(console);
+const suppressedConsoleError = () => {};
+
+console.error = (...args: unknown[]) => {
+	if (process.env.BUN_TEST_VERBOSE_ERRORS === '1') {
+		originalConsoleError(...args);
+		return;
+	}
+
+	suppressedConsoleError();
+};
+
+type MockUser = {
+	uuid: string;
+	email?: string;
+	username?: string;
+	role?: string;
+	admin?: string;
+	password_hash?: string;
+	profile_picture_url?: string;
+	boards?: string[];
+} | null;
+type MockBoard = {
+	uuid: string;
+	name: string;
+	owner: string;
+	editors?: string[];
+	viewers?: string[];
+} | null;
 type MockLoginUser = {
 	uuid: string;
 	email: string;
 	username: string;
+	role?: string;
 	admin?: string;
 	password_hash?: string;
 	profile_picture_url?: string;
@@ -25,8 +53,12 @@ export const state = {
 	boardStateGetValue: null as string | null,
 	boardStateGetCalls: [] as string[],
 	boardStateSetCalls: [] as Array<{ key: string; value: string }>,
-	boardsUser: { uuid: 'user-1' } as MockBoardOwner,
+	boardsUser: { uuid: 'user-1', role: 'student', username: '', email: '' } as MockUser,
+	usersById: {} as Record<string, MockUser>,
 	boardsBoard: { uuid: 'board-1', name: 'Roadmap', owner: 'user-1' } as MockBoard,
+	boardsAll: [] as Array<NonNullable<MockBoard>>,
+	boardsOwnedByOwnerId: {} as Record<string, Array<NonNullable<MockBoard>>>,
+	boardsSharedByUserId: {} as Record<string, Array<NonNullable<MockBoard>>>,
 	boardsCreatedBoardId: 'board-1',
 	boardsUserGetCalls: [] as string[],
 	boardsCreateCalls: [] as Array<{ ownerId: string; name: string }>,
@@ -64,6 +96,7 @@ export const state = {
 	loginGetByEmailCalls: [] as string[],
 	loginSaveCalls: [] as MockLoginUser[],
 	userUpdateCalls: [] as Array<{ userId: string; updates: { username?: string } }>,
+	userRoleUpdateCalls: [] as Array<{ userId: string; role: string }>,
 	userUpdateError: null as Error | null,
 	userDeleteCalls: [] as string[],
 	userDeleteError: null as Error | null
@@ -126,7 +159,22 @@ const rdb = {
 const UserConnector = {
 	get: async (ownerId: string) => {
 		state.boardsUserGetCalls.push(ownerId);
+
+		if (Object.prototype.hasOwnProperty.call(state.usersById, ownerId)) {
+			return state.usersById[ownerId] ?? null;
+		}
+
 		return state.boardsUser;
+	},
+	getAll: async () => {
+		const mappedUsers = Object.values(state.usersById).filter(
+			(user): user is NonNullable<MockUser> => user !== null
+		);
+		if (mappedUsers.length > 0) {
+			return mappedUsers;
+		}
+
+		return state.boardsUser ? [state.boardsUser] : [];
 	},
 	getByEmail: async (email: string) => {
 		state.loginGetByEmailCalls.push(email);
@@ -135,16 +183,38 @@ const UserConnector = {
 	save: async (user: MockLoginUser) => {
 		state.loginSaveCalls.push(user);
 		state.loginUsersByEmail[user.email] = user;
+		state.usersById[user.uuid] = user;
 	},
 	updateProfile: async (userId: string, updates: { username?: string }) => {
 		state.userUpdateCalls.push({ userId, updates });
+		const existing = state.usersById[userId];
+		if (existing && typeof updates.username === 'string') {
+			existing.username = updates.username;
+		}
+		if (state.boardsUser?.uuid === userId && typeof updates.username === 'string') {
+			state.boardsUser.username = updates.username;
+		}
 
 		if (state.userUpdateError) {
 			throw state.userUpdateError;
 		}
 	},
+	updateRole: async (userId: string, role: string) => {
+		state.userRoleUpdateCalls.push({ userId, role });
+		const existing = state.usersById[userId];
+		if (existing) {
+			existing.role = role;
+		}
+		if (state.boardsUser?.uuid === userId) {
+			state.boardsUser.role = role;
+		}
+	},
 	del: async (userId: string) => {
 		state.userDeleteCalls.push(userId);
+		delete state.usersById[userId];
+		if (state.boardsUser?.uuid === userId) {
+			state.boardsUser = null;
+		}
 
 		if (state.userDeleteError) {
 			throw state.userDeleteError;
@@ -163,6 +233,25 @@ const BoardConnector = {
 	},
 	del: async (boardId: string) => {
 		state.boardsDelCalls.push(boardId);
+	},
+	getAllByOwnerId: async (ownerId: string) => {
+		if (Object.prototype.hasOwnProperty.call(state.boardsOwnedByOwnerId, ownerId)) {
+			return state.boardsOwnedByOwnerId[ownerId];
+		}
+		return state.boardsBoard && state.boardsBoard.owner === ownerId ? [state.boardsBoard] : [];
+	},
+	getAllSharedByUserId: async (userId: string) => {
+		if (Object.prototype.hasOwnProperty.call(state.boardsSharedByUserId, userId)) {
+			return state.boardsSharedByUserId[userId];
+		}
+		return [];
+	},
+	getAll: async () => {
+		if (state.boardsAll.length > 0) {
+			return state.boardsAll;
+		}
+
+		return state.boardsBoard ? [state.boardsBoard] : [];
 	}
 };
 
@@ -257,8 +346,12 @@ export function resetMockState() {
 	state.boardStateGetValue = null;
 	state.boardStateGetCalls.length = 0;
 	state.boardStateSetCalls.length = 0;
-	state.boardsUser = { uuid: 'user-1' };
+	state.boardsUser = { uuid: 'user-1', role: 'student', username: '', email: '' };
+	state.usersById = {};
 	state.boardsBoard = { uuid: 'board-1', name: 'Roadmap', owner: 'user-1' };
+	state.boardsAll.length = 0;
+	state.boardsOwnedByOwnerId = {};
+	state.boardsSharedByUserId = {};
 	state.boardsCreatedBoardId = 'board-1';
 	state.boardsUserGetCalls.length = 0;
 	state.boardsCreateCalls.length = 0;
@@ -296,6 +389,7 @@ export function resetMockState() {
 	state.loginGetByEmailCalls.length = 0;
 	state.loginSaveCalls.length = 0;
 	state.userUpdateCalls.length = 0;
+	state.userRoleUpdateCalls.length = 0;
 	state.userUpdateError = null;
 	state.userDeleteCalls.length = 0;
 	state.userDeleteError = null;

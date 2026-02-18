@@ -22,7 +22,8 @@ describe('api/login +server', () => {
 		state.loginUsersByEmail['dev@example.com'] = {
 			uuid: 'user-42',
 			email: 'dev@example.com',
-			username: 'Dev'
+			username: 'Dev',
+			role: 'student'
 		};
 
 		const response = await loginRoute.POST({
@@ -36,7 +37,8 @@ describe('api/login +server', () => {
 		expect(await response.json()).toEqual({
 			id: 'user-42',
 			email: 'dev@example.com',
-			name: 'Dev'
+			name: 'Dev',
+			role: 'student'
 		});
 		expect(state.loginGetByEmailCalls).toEqual(['dev@example.com']);
 		expect(state.loginSaveCalls).toHaveLength(0);
@@ -63,7 +65,7 @@ describe('api/login +server', () => {
 			uuid: payload.id,
 			email: 'new.user@example.com',
 			username: 'new.user',
-			admin: 'no',
+			role: 'student',
 			password_hash: '',
 			profile_picture_url: ''
 		});
@@ -85,6 +87,7 @@ describe('api/login +server', () => {
 
 		expect(response.status).toBe(200);
 		expect(payload.name).toBe('Product Owner');
+		expect(payload.role).toBe('student');
 		expect(state.loginSaveCalls).toHaveLength(1);
 		expect(state.loginSaveCalls[0].username).toBe('Product Owner');
 	});

@@ -10,6 +10,7 @@
 			user_id: string;
 			email: string;
 			name: string | null;
+			role: 'student' | 'ape' | 'admin';
 			ownedBoards: Array<{
 				uuid: string;
 				name: string;
@@ -21,7 +22,7 @@
 				name: string;
 				owner: string;
 				ownerName: string;
-				role: 'editor' | 'viewer';
+				role: 'owner' | 'editor' | 'viewer';
 			}>;
 		};
 	}>();

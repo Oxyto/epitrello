@@ -36,3 +36,35 @@ npm run build
 You can preview the production build with `npm run preview`.
 
 > To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+
+## User Role Maintenance
+
+This project now uses three global user roles:
+
+- `student`
+- `ape`
+- `admin`
+
+To migrate existing users that still rely on the legacy `admin` flag:
+
+```sh
+bun run migrate:user-roles
+```
+
+You can preview changes without writing:
+
+```sh
+bun run migrate:user-roles -- --dry-run
+```
+
+To initialize/promote an admin account by email:
+
+```sh
+bun run ensure-admin -- admin@example.com
+```
+
+To create the account if it does not exist:
+
+```sh
+bun run ensure-admin -- admin@example.com --create
+```

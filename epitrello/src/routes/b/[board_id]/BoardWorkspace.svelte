@@ -807,7 +807,7 @@
 						style={`height: ${draggedCardHeight}px;`}
 					></li>
 				{/if}
-				</ol>
+			</ol>
 
 			<form
 				class="mt-2.5 flex gap-1.5"

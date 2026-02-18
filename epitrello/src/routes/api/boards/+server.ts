@@ -5,6 +5,7 @@ import type { UUID } from 'crypto';
 import { UserConnector, BoardConnector } from '$lib/server/redisConnector';
 import { requireBoardAccess } from '$lib/server/boardAccess';
 import { notifyBoardUpdated } from '$lib/server/boardEvents';
+import { getVisibleBoardsForUser } from '$lib/server/boardVisibility';
 
 const MAX_SEARCH_QUERY_LENGTH = 120;
 const MAX_SEARCH_LIMIT = 20;
@@ -56,64 +57,25 @@ export const GET: RequestHandler = async ({ url }) => {
 		);
 	}
 
-	const user = await UserConnector.get(userId as UUID);
-	if (!user) {
+	const visibility = await getVisibleBoardsForUser(userId as UUID);
+	if (!visibility) {
 		return json({ error: 'User not found' }, { status: 404 });
 	}
 
 	const normalizedQuery = query.toLowerCase();
 	const searchLimit = parseSearchLimit(url.searchParams.get('limit'));
-	const [ownedBoards, sharedBoards] = await Promise.all([
-		BoardConnector.getAllByOwnerId(userId as UUID),
-		BoardConnector.getAllSharedByUserId(userId as UUID)
-	]);
 
-	const ownerDisplayName = user.username?.trim() || user.email?.trim() || 'You';
-
-	const normalizedOwnedBoards = (ownedBoards ?? [])
-		.filter((board) => board.owner === userId)
-		.filter((board) =>
-			boardMatchesSearch(board.name, board.uuid, ownerDisplayName, normalizedQuery)
-		)
+	const normalizedOwnedBoards = visibility.ownedBoards
+		.filter((board) => boardMatchesSearch(board.name, board.uuid, board.ownerName, normalizedQuery))
 		.sort(compareBoardsByName)
 		.slice(0, searchLimit)
-		.map((board) => ({
-			uuid: board.uuid,
-			name: board.name,
-			owner: board.owner,
-			ownerName: ownerDisplayName,
-			role: 'owner' as const
-		}));
+		.map((board) => ({ ...board }));
 
-	const filteredSharedBoards = (sharedBoards ?? []).filter((board) => board.owner !== userId);
-	const ownerIds = Array.from(new Set(filteredSharedBoards.map((board) => board.owner)));
-	const ownerEntries = await Promise.all(
-		ownerIds.map(async (ownerId) => [ownerId, await UserConnector.get(ownerId as UUID)] as const)
-	);
-	const ownerNameById = new Map(
-		ownerEntries.map(([ownerId, owner]) => [
-			ownerId,
-			owner?.username?.trim() || owner?.email?.trim() || 'Unknown'
-		])
-	);
-
-	const normalizedSharedBoards = filteredSharedBoards
-		.map((board) => ({
-			board,
-			ownerName: ownerNameById.get(board.owner) ?? 'Unknown'
-		}))
-		.filter(({ board, ownerName }) =>
-			boardMatchesSearch(board.name, board.uuid, ownerName, normalizedQuery)
-		)
-		.sort((left, right) => compareBoardsByName(left.board, right.board))
+	const normalizedSharedBoards = visibility.sharedBoards
+		.filter((board) => boardMatchesSearch(board.name, board.uuid, board.ownerName, normalizedQuery))
+		.sort(compareBoardsByName)
 		.slice(0, searchLimit)
-		.map(({ board, ownerName }) => ({
-			uuid: board.uuid,
-			name: board.name,
-			owner: board.owner,
-			ownerName,
-			role: board.editors?.includes(userId) ? ('editor' as const) : ('viewer' as const)
-		}));
+		.map((board) => ({ ...board }));
 
 	return json({
 		query,
