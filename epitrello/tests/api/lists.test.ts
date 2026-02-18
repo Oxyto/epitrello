@@ -42,6 +42,49 @@ describe('api/lists +server', () => {
 		});
 	});
 
+	it('POST allows APE to create a list on a student board', async () => {
+		state.boardsBoard = { uuid: 'board-1', name: 'Roadmap', owner: 'student-1' };
+		state.usersById = {
+			'ape-1': { uuid: 'ape-1', role: 'ape', username: 'APE', email: 'ape@example.com' },
+			'student-1': {
+				uuid: 'student-1',
+				role: 'student',
+				username: 'Student',
+				email: 'student@example.com'
+			}
+		};
+
+		const response = await listsRoute.POST({
+			request: new Request('http://localhost/api/lists', {
+				method: 'POST',
+				body: JSON.stringify({ boardId: 'board-1', name: 'Teacher notes', userId: 'ape-1' })
+			})
+		} as never);
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ id: 'list-1', name: 'Teacher notes' });
+		expect(state.listsCreateCalls).toEqual([{ boardId: 'board-1', name: 'Teacher notes' }]);
+	});
+
+	it('POST denies APE access on non-student owner boards', async () => {
+		state.boardsBoard = { uuid: 'board-1', name: 'Roadmap', owner: 'admin-2' };
+		state.usersById = {
+			'ape-1': { uuid: 'ape-1', role: 'ape', username: 'APE', email: 'ape@example.com' },
+			'admin-2': { uuid: 'admin-2', role: 'admin', username: 'Admin', email: 'admin@example.com' }
+		};
+
+		await expectHttpErrorStatus(
+			listsRoute.POST({
+				request: new Request('http://localhost/api/lists', {
+					method: 'POST',
+					body: JSON.stringify({ boardId: 'board-1', name: 'Teacher notes', userId: 'ape-1' })
+				})
+			} as never),
+			403
+		);
+		expect(state.listsCreateCalls).toHaveLength(0);
+	});
+
 	it('POST throws 500 when connector fails', async () => {
 		state.listsCreateError = new Error('create list failed');
 

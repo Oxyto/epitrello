@@ -1,5 +1,6 @@
 import { error } from '@sveltejs/kit';
-import { BoardConnector, rdb, type UUID } from '$lib/server/redisConnector';
+import { BoardConnector, UserConnector, rdb, type UUID } from '$lib/server/redisConnector';
+import { isAdminUser, isApeUser, isStudentUser } from '$lib/server/userRoles';
 
 export type BoardAccessRole = 'owner' | 'editor' | 'viewer';
 type AccessMode = 'view' | 'edit' | 'owner';
@@ -26,6 +27,15 @@ export async function resolveBoardRole(boardId: UUID, userId: string | null | un
 		return { board, role: null as BoardAccessRole | null };
 	}
 
+	const requester = await UserConnector.get(userId as UUID);
+	if (!requester) {
+		return { board, role: null as BoardAccessRole | null };
+	}
+
+	if (isAdminUser(requester)) {
+		return { board, role: 'owner' as BoardAccessRole };
+	}
+
 	if (board.owner === userId) {
 		return { board, role: 'owner' as BoardAccessRole };
 	}
@@ -36,6 +46,13 @@ export async function resolveBoardRole(boardId: UUID, userId: string | null | un
 
 	if (board.viewers?.includes(userId)) {
 		return { board, role: 'viewer' as BoardAccessRole };
+	}
+
+	if (isApeUser(requester)) {
+		const boardOwner = await UserConnector.get(board.owner as UUID);
+		if (isStudentUser(boardOwner)) {
+			return { board, role: 'editor' as BoardAccessRole };
+		}
 	}
 
 	return { board, role: null as BoardAccessRole | null };

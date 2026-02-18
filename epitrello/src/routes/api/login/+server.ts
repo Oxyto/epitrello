@@ -21,7 +21,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
 		user = {
 			uuid,
-			admin: 'no',
+			role: 'student',
 			username: name,
 			email,
 			password_hash: '',
@@ -35,6 +35,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	return json({
 		id: user.uuid,
 		email: user.email,
-		name: user.username
+		name: user.username,
+		role: user.role ?? 'student'
 	});
 };

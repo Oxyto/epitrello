@@ -109,7 +109,7 @@ export const GET: RequestHandler = async ({ url }) => {
 				uuid: newUuid,
 				username,
 				email,
-				admin: 'no',
+				role: 'student',
 				password_hash: '',
 				profile_picture_url: '',
 				boards: []
@@ -121,7 +121,8 @@ export const GET: RequestHandler = async ({ url }) => {
 		const safeUser = {
 			id: user.uuid,
 			email: user.email,
-			name: user.username
+			name: user.username,
+			role: user.role ?? 'student'
 		};
 
 		return new Response(

@@ -14,6 +14,7 @@ export const load: PageServerLoad = async ({ params }) => {
 	return {
 		user_id: user.uuid,
 		email: user.email,
-		name: user.username ?? ''
+		name: user.username ?? '',
+		role: user.role
 	};
 };

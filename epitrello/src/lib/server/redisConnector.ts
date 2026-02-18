@@ -13,7 +13,7 @@ export class UserConnector {
 			uuid: user.uuid,
 			username: user.username,
 			email: user.email,
-			admin: user.admin,
+			role: user.role,
 			password_hash: user.password_hash ?? '',
 			profile_picture_url: user.profile_picture_url ?? ''
 		});
@@ -42,9 +42,12 @@ export class UserConnector {
 
 	static async getAll(): Promise<IUser[]> {
 		const keys = await rdb.keys('user:*');
-		const users_query = await Promise.all(keys.map((key) => rdb.hgetall(key)));
+		const userHashKeys = keys.filter((key) => /^user:[^:]+$/.test(String(key)));
+		const users_query = await Promise.all(userHashKeys.map((key) => rdb.hgetall(key)));
 
-		const users = users_query.filter((user) => user !== null).map((user) => UserSchema.parse(user));
+		const users = users_query
+			.filter((user) => user !== null && Object.keys(user).length > 0)
+			.map((user) => UserSchema.parse(user));
 		return await Promise.all(
 			users.map(async (user) => {
 				user.boards = await rdb.smembers(`user:${user.uuid}:boards`);
@@ -78,6 +81,10 @@ export class UserConnector {
 		}
 
 		await rdb.hset(`user:${userId}`, payload);
+	}
+
+	static async updateRole(userId: UUID, role: IUser['role']) {
+		await rdb.hset(`user:${userId}`, { role });
 	}
 
 	static async del(userId: UUID) {
@@ -169,6 +176,16 @@ export class BoardConnector {
 		]);
 
 		return board;
+	}
+
+	static async getAll(): Promise<IBoard[]> {
+		const keys = await rdb.keys('board:*');
+		const boardHashKeys = keys.filter((key) => /^board:[^:]+$/.test(String(key)));
+		const boardIds = boardHashKeys.map((key) => String(key).slice('board:'.length));
+		const boards = await Promise.all(
+			boardIds.map((boardId) => BoardConnector.get(boardId as UUID))
+		);
+		return boards.filter((board): board is IBoard => board !== null);
 	}
 
 	static async getAllByOwnerId(ownerUUID: UUID): Promise<IBoard[] | null> {

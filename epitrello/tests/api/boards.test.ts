@@ -9,6 +9,69 @@ import {
 beforeEach(resetMockState);
 
 describe('api/boards +server', () => {
+	it('GET includes student boards for APE users', async () => {
+		state.usersById = {
+			'ape-1': { uuid: 'ape-1', role: 'ape', username: 'Teacher', email: 'ape@example.com' },
+			'student-1': {
+				uuid: 'student-1',
+				role: 'student',
+				username: 'Student One',
+				email: 'student@example.com'
+			}
+		};
+		state.boardsOwnedByOwnerId['ape-1'] = [];
+		state.boardsSharedByUserId['ape-1'] = [];
+		state.boardsAll = [{ uuid: 'board-student', name: 'Student board', owner: 'student-1' }];
+
+		const response = await boardsRoute.GET({
+			url: new URL('http://localhost/api/boards?userId=ape-1')
+		} as never);
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({
+			query: '',
+			ownedBoards: [],
+			sharedBoards: [
+				{
+					uuid: 'board-student',
+					name: 'Student board',
+					owner: 'student-1',
+					ownerName: 'Student One',
+					role: 'editor'
+				}
+			]
+		});
+	});
+
+	it('GET gives admin full access to every board', async () => {
+		state.usersById = {
+			'admin-1': { uuid: 'admin-1', role: 'admin', username: 'Admin', email: 'admin@example.com' },
+			'user-1': { uuid: 'user-1', role: 'student', username: 'Alice', email: 'alice@example.com' }
+		};
+		state.boardsOwnedByOwnerId['admin-1'] = [];
+		state.boardsSharedByUserId['admin-1'] = [];
+		state.boardsAll = [{ uuid: 'board-1', name: 'Roadmap', owner: 'user-1' }];
+
+		const response = await boardsRoute.GET({
+			url: new URL('http://localhost/api/boards?userId=admin-1')
+		} as never);
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({
+			query: '',
+			ownedBoards: [],
+			sharedBoards: [
+				{
+					uuid: 'board-1',
+					name: 'Roadmap',
+					owner: 'user-1',
+					ownerName: 'Alice',
+					role: 'owner'
+				}
+			]
+		});
+	});
+
 	it('POST returns 400 when ownerId or name is missing', async () => {
 		const response = await boardsRoute.POST({
 			request: new Request('http://localhost/api/boards', {
@@ -73,6 +136,35 @@ describe('api/boards +server', () => {
 			{
 				key: 'board:board-1',
 				values: { name: 'Renamed board' }
+			}
+		]);
+	});
+
+	it('PATCH allows admin to rename a board owned by another user', async () => {
+		state.boardsBoard = { uuid: 'board-1', name: 'Roadmap', owner: 'student-1' };
+		state.usersById = {
+			'admin-1': { uuid: 'admin-1', role: 'admin', username: 'Admin', email: 'admin@example.com' },
+			'student-1': {
+				uuid: 'student-1',
+				role: 'student',
+				username: 'Student',
+				email: 'student@example.com'
+			}
+		};
+
+		const response = await boardsRoute.PATCH({
+			request: new Request('http://localhost/api/boards', {
+				method: 'PATCH',
+				body: JSON.stringify({ boardId: 'board-1', name: 'Admin rename', userId: 'admin-1' })
+			})
+		} as never);
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ ok: true });
+		expect(state.rdbHsetCalls).toEqual([
+			{
+				key: 'board:board-1',
+				values: { name: 'Admin rename' }
 			}
 		]);
 	});
