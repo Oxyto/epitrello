@@ -1,70 +1,137 @@
-# sv
+# EpiTrello
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+A web Kanban application built with SvelteKit and Bun, with an integrated API (`+server.ts`) and Redis persistence.
 
-## Creating a project
+## Features
 
-If you're seeing this, you've probably already done this step. Congrats!
+- Kanban board management (create, rename, delete)
+- List and card management (drag-and-drop, ordering, description, tags, due dates, assignees, completed state)
+- Board sharing through invite links with roles (`owner`, `editor`, `viewer`)
+- Board activity history and real-time sync via SSE (`/api/board-events`)
+- User notifications (added to a board, card due date)
+- Authentication:
+  - local login via email (`/api/login`)
+  - OAuth GitHub
+  - OAuth Microsoft
+- Global user roles:
+  - `student`
+  - `ape`
+  - `admin`
 
-```sh
-# create a new project in the current directory
-npx sv create
+## Tech Stack
 
-# create a new project in my-app
-npx sv create my-app
+- Runtime: Bun
+- Front/Back: SvelteKit + Svelte 5
+- Build: Vite
+- Styles: Tailwind CSS 4
+- Validation: Zod
+- Data: Redis
+- Tests: `bun:test`
+
+## Requirements
+
+- Bun `>= 1.3.x`
+- Redis `>= 7`
+
+## Local Run (without Docker)
+
+From this directory (`epitrello/`):
+
+```bash
+bun install
 ```
 
-## Developing
+Create a `.env` file with the following variables:
 
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
-
-```sh
-npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
+```env
+REDIS_URL=redis://localhost:6379
+GITHUB_CLIENT_ID=
+GITHUB_CLIENT_SECRET=
+MICROSOFT_CLIENT_ID=
+MICROSOFT_CLIENT_SECRET=
+MICROSOFT_TENANT_ID=common
+MICROSOFT_REDIRECT_URI=http://localhost:5173/auth/microsoft/callback
 ```
 
-## Building
+Start Redis (example):
 
-To create a production version of your app:
-
-```sh
-npm run build
+```bash
+docker run --rm -p 6379:6379 redis:7-alpine
 ```
 
-You can preview the production build with `npm run preview`.
+Then start the app:
 
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+```bash
+bun run dev --host 0.0.0.0 --port 5173
+```
 
-## User Role Maintenance
+App is available at `http://localhost:5173`.
 
-This project now uses three global user roles:
+## Run with Docker
 
-- `student`
-- `ape`
-- `admin`
+Development mode:
 
-To migrate existing users that still rely on the legacy `admin` flag:
+```bash
+docker compose -f docker-compose.dev.yml up --build
+```
 
-```sh
+Production mode:
+
+```bash
+docker compose -f docker-compose.prod.yml up --build -d
+```
+
+- Dev: app on `5173`
+- Prod: app on `3000`
+
+## Useful Scripts
+
+- `bun run dev`: development server
+- `bun run build`: production build
+- `bun run preview`: preview build
+- `bun run test`: run tests
+- `bun run lint`: prettier + eslint
+- `bun run check`: Svelte/TypeScript checks
+- `bun run format`: code formatting
+
+Role maintenance:
+
+```bash
 bun run migrate:user-roles
-```
-
-You can preview changes without writing:
-
-```sh
 bun run migrate:user-roles -- --dry-run
-```
-
-To initialize/promote an admin account by email:
-
-```sh
 bun run ensure-admin -- admin@example.com
-```
-
-To create the account if it does not exist:
-
-```sh
 bun run ensure-admin -- admin@example.com --create
 ```
+
+## API (overview)
+
+- `POST /api/login`
+- `GET/POST/PATCH/DELETE /api/boards`
+- `POST/PATCH/DELETE /api/lists`
+- `POST/PATCH/DELETE /api/cards`
+- `POST/DELETE /api/tags`
+- `GET /api/board-full`
+- `GET/POST /api/board-state`
+- `GET /api/board-history`
+- `GET /api/board-events` (SSE)
+- `GET/POST/PATCH /api/board-sharing`
+- `GET/PATCH /api/notifications`
+- `GET/POST/PATCH/DELETE /api/users` (admin user management)
+
+## Tests
+
+API tests are in `tests/api/` (boards, lists, cards, tags, users, login, board-full, board-state, etc.).
+
+```bash
+bun run test
+```
+
+## CI
+
+GitHub Actions pipeline: install, lint, test, build (`.github/workflows/ci.yml`).
+
+## Additional Documentation
+
+- `../documentation/cahier_des_charges.md`
+- `../documentation/documentation_technique.md`
+- `../documentation/documentation_test.md`
