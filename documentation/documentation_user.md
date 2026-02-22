@@ -23,11 +23,12 @@ Exemples d’usage :
 
 ### 2.1. Accéder à l’application
 
-- URL de l’application : **[ “http://localhost:5173”]**
+- URL de l’application locale : **["http://localhost:5173"]**
+- URL de l'application déployé : **["https://epitrello-v86y.onrender.com/"]**
 
 ### 2.2. Connexion
 
-- Cliquez sur le bouton **“Login”** en haut à droite.
+- Cliquez sur le bouton **"Login"** en haut à droite.
 - Vous avez la possibilite de cree un compte ou bien de vous connecter via SSO avec github/microsoft
 - Une fois connecté, vous accedez a votre profil.
 
@@ -38,9 +39,9 @@ Exemples d’usage :
 
 ## 3. Concepts de base
 
-- **Board** : un tableau de projet (ex : “Projet EIP”, “Révisions examens”).
-- **List** : une colonne dans un board (ex : “To do”, “IN progress”, “DONE”).
-- **Card** : une tâche ou un ticket dans une liste (ex : “Implémenter login”).
+- **Board** : un tableau de projet (ex : "Projet EIP", "Révisions examens").
+- **List** : une colonne dans un board (ex : "To do", "IN progress", "DONE").
+- **Card** : une tâche ou un ticket dans une liste (ex : "Implémenter login").
 
 ---
 
@@ -48,7 +49,7 @@ Exemples d’usage :
 
 ### 4.1. Créer un nouveau board
 
-1. Depuis la page d’accueil(profil) / le header, cliquez sur **“Create”**.
+1. Depuis la page d’accueil(profil) / le header, cliquez sur **"Create"**.
 2. une fenetre s'ouvre dans laquelle vous pouvez indiquez le nom du board ainsi que des suggestion templaté
 2. Donnez un **nom au board** (ex : *board-test*).
 3. Validez. Vous êtes redirigé vers la page du board.
@@ -65,9 +66,9 @@ Exemples d’usage :
 
 ### 5.1. Ajouter une liste
 
-1. Sur le board, à droite des listes existantes, utilisez le bloc **“New list name…”**.
+1. Sur le board, à droite des listes existantes, utilisez le bloc **"New list name…"**.
 2. Saisissez le nom (ex : *Backlog*, *À faire*, etc.).
-3. Cliquez sur **“+ Add List”**.
+3. Cliquez sur **"+ Add List"**.
 
 ### 5.2. Renommer une liste
 
@@ -76,7 +77,7 @@ Exemples d’usage :
 
 ### 5.3. Supprimer une liste
 
-- Cliquez sur **“X”** en haut à droite de la liste.
+- Cliquez sur **"X"** en haut à droite de la liste.
 - La liste et toutes ses cartes associées sont supprimées de l’interface
   et de la base de données.
 
@@ -88,8 +89,8 @@ Exemples d’usage :
 
 ### 6.1. Ajouter une carte
 
-1. En bas d’une liste, dans le champ **“New card title…”**, tapez le titre de la carte.
-2. Cliquez sur **“+ Add”**.
+1. En bas d’une liste, dans le champ **"New card title…"**, tapez le titre de la carte.
+2. Cliquez sur **"+ Add"**.
 3. La nouvelle carte apparaît immédiatement dans la liste.
 
 ### 6.2. Renommer une carte (titre)
@@ -106,7 +107,7 @@ Exemples d’usage :
 
 ### 6.4. Supprimer une carte
 
-- Cliquez sur **“X”** en haut a droite de la carte.
+- Cliquez sur **"X"** en haut a droite de la carte.
 - La carte est retirée de la liste et supprimée en base, ainsi que ses tags.
 
 ---
@@ -120,14 +121,14 @@ Ce panneau contient plusieurs sections :
 ### 7.1. En-tête
 
 - **Titre de la carte** (modifiable grace a la zone de texte).
-- Indication de la liste a laquelle appartient la carte ex: *“in list X”*
+- Indication de la liste a laquelle appartient la carte ex: *"in list X"*
 
 ### 7.2. Members (assignation)
 
 - Dans la section **MEMBERS**, faite defiler menu  deroulant pour trouver le membre que vous voulez ajouter 
-- Cliquez sur le bouton **“+ Join”** (ou équivalent)
+- Cliquez sur le bouton **"+ Join"** (ou équivalent)
   pour l'ajouter comme membre de la carte.
-- Cliquez sur le petit bouton **“X”** dans le badge a droite pour le retirer.
+- Cliquez sur le petit bouton **"X"** dans le badge a droite pour le retirer.
 - Les membres sont enregistrés en base et réapparaissent à la réouverture du panneau.
 
 ### 7.3. Description
@@ -147,7 +148,7 @@ Exemples d’usage :
 - La section **Due date** est prévue pour preciser une date limite pour votre tache.
 - Lorsque vous cliquez sur la zone de texte il est possible de mettre a jour chaque element de la date JJ/MM/YYYY mais si vous clique sur l'icone calendrier vous verrez s'ouvrire le calendrier pour pouvoir selectionner la date precise a l'aquelle vous voulez assigne la tache.
 - Ensuite cliquez sur **set** pour ajouter cette date et l'affecter a la carte
-- Cliquez sur le petit bouton **“X”** dans le badge a droite pour la retirer.
+- Cliquez sur le petit bouton **"X"** dans le badge a droite pour la retirer.
 
 ---
 
@@ -155,10 +156,10 @@ Exemples d’usage :
 
 Les tags permettent de catégoriser les cartes (priorité, type, statut secondaire…).
 
-1. Dans la section **TAGS**, saisissez un texte dans **“Ajouter un tag…”**.
-2. Cliquez sur **“+ Tag”**.
+1. Dans la section **TAGS**, saisissez un texte dans **"Ajouter un tag…"**.
+2. Cliquez sur **"+ Tag"**.
 3. Le tag apparaît sous forme de badge coloré, et est sauvegardé en base.
-4. Cliquez sur le petit bouton **“X”** dans le badge a droite pour le retirer.
+4. Cliquez sur le petit bouton **"X** dans le badge a droite pour le retirer.
 
 ## 7.6 autre
 
@@ -211,6 +212,3 @@ Les tags permettent de catégoriser les cartes (priorité, type, statut secondai
 - La quatrieme et derniere sections vous permet de supprimer directement le board ainsi que toute ses elements attaché tel que les listes/cartes.
 
 ---
-
-
-
