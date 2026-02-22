@@ -198,6 +198,25 @@ Claude Desktop config example (`claude_desktop_config.json`):
 }
 ```
 
+## Recent Changes
+
+- Added an MCP JSON-RPC endpoint at `/api/mcp` with:
+  - `initialize`
+  - `tools/list`
+  - `tools/call`
+- Added MCP tools:
+  - `create_board`
+  - `create_list`
+  - `create_card`
+  - `add_tag`
+  - `get_board_full`
+- Added a stdio MCP bridge (`scripts/mcp-stdio.ts`) for MCP clients.
+- Added in-board AI tools panel (board page) with:
+  - direct MCP actions
+  - prompt-driven multi-action batches
+  - undo for last AI batch
+  - activity history entries for batch start/undo.
+
 ## Tests
 
 API tests are in `tests/api/` (boards, lists, cards, tags, users, login, board-full, board-state, etc.).
