@@ -627,6 +627,65 @@
 		}
 	}
 
+	async function clearBoardContent() {
+		if (!boardId || !currentUserId) {
+			return;
+		}
+		if (!canManage) {
+			throw new Error('Only board owner can clear this board.');
+		}
+
+		const confirmed = window.confirm(
+			'Clear the whole board content? This deletes all lists, cards and tags.'
+		);
+		if (!confirmed) {
+			return;
+		}
+
+		mcpLoading = true;
+		mcpError = '';
+
+		try {
+			const response = await fetch('/api/board-clear', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({
+					boardId,
+					userId: currentUserId
+				})
+			});
+			const payload = (await response.json().catch(() => ({}))) as {
+				error?: string;
+				message?: string;
+				clearedLists?: number;
+				clearedCards?: number;
+			};
+
+			if (!response.ok) {
+				throw new Error(payload.error ?? payload.message ?? 'Unable to clear board.');
+			}
+
+			lastAiBatchOperations = [];
+			lastAiBatchLabel = '';
+
+			mcpOutput = JSON.stringify(
+				{
+					cleared: true,
+					clearedLists: Number(payload.clearedLists ?? 0),
+					clearedCards: Number(payload.clearedCards ?? 0)
+				},
+				null,
+				2
+			);
+
+			await Promise.all([loadBoardFull(), loadBoardHistory({ silent: true })]);
+		} catch (error) {
+			mcpError = error instanceof Error ? error.message : 'Board clear failed.';
+		} finally {
+			mcpLoading = false;
+		}
+	}
+
 	async function runBoardMcpAction() {
 		if (!browser || !boardId || !currentUserId) {
 			return;
@@ -1147,6 +1206,16 @@
 					>
 						Undo last AI batch
 					</button>
+					{#if canManage}
+						<button
+							type="button"
+							class="mb-0.5 h-9 rounded-md border border-rose-300/40 bg-rose-500/20 px-3 text-sm font-semibold text-rose-100 transition-colors hover:bg-rose-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+							onclick={() => void clearBoardContent()}
+							disabled={mcpLoading}
+						>
+							Clear board
+						</button>
+					{/if}
 				</div>
 
 				{#if lastAiBatchOperations.length > 0}
