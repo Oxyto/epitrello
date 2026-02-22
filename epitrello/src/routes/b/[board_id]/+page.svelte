@@ -37,6 +37,24 @@
 	let historyLoading = $state(false);
 	let historyPanelOpen = $state(false);
 	let filtersPanelOpen = $state(false);
+	let mcpPanelOpen = $state(false);
+	let mcpLoading = $state(false);
+	let mcpError = $state('');
+	let mcpOutput = $state('');
+	let mcpAction = $state<
+		'create_list' | 'create_card' | 'add_tag' | 'get_board_full' | 'prompt_assistant'
+	>('create_list');
+	let mcpListName = $state('');
+	let mcpCardTitle = $state('');
+	let mcpTagName = $state('');
+	let mcpTargetListId = $state('');
+	let mcpTargetCardId = $state('');
+	let mcpPrompt = $state(
+		'list: Todo, Doing, Done\ncard: Todo | Préparer sprint\ncard: Todo | Écrire tests\ntag: Préparer sprint | urgent'
+	);
+	let mcpBatchName = $state('');
+	let lastAiBatchOperations = $state<UndoOperation[]>([]);
+	let lastAiBatchLabel = $state('');
 
 	let lists = $state<UiList[]>([]);
 	let boardMembers = $state<BoardMember[]>([]);
@@ -45,6 +63,16 @@
 	let realtimeReloadInFlight = $state(false);
 	let realtimeReloadQueued = $state(false);
 	let boardSyncKey = $state('');
+
+	type PromptOperation =
+		| { type: 'create_list'; listName: string }
+		| { type: 'create_card'; listName: string; cardTitle: string }
+		| { type: 'add_tag'; cardTitle: string; tagName: string };
+
+	type UndoOperation =
+		| { type: 'delete_list'; listId: string; listName: string }
+		| { type: 'delete_card'; cardId: string; cardTitle: string }
+		| { type: 'remove_tag'; cardId: string; tagName: string; cardTitle: string };
 
 	function applyLoadedState(payload: BoardFullResponse) {
 		if (!payload || !payload.board) return;
@@ -160,6 +188,496 @@
 		historyPanelOpen = !historyPanelOpen;
 		if (historyPanelOpen && historyEntries.length === 0 && !historyLoading) {
 			void loadBoardHistory();
+		}
+	}
+
+	const selectableLists = $derived(
+		lists
+			.filter((list) => typeof list.uuid === 'string' && list.uuid.length > 0)
+			.map((list) => ({
+				uuid: String(list.uuid),
+				name: list.name
+			}))
+	);
+
+	const selectableCards = $derived(
+		lists.flatMap((list) =>
+			list.cards
+				.filter((card) => typeof card.uuid === 'string' && card.uuid.length > 0)
+				.map((card) => ({
+					uuid: String(card.uuid),
+					title: card.title,
+					listName: list.name
+				}))
+		)
+	);
+
+	$effect(() => {
+		if (!mcpTargetListId || !selectableLists.some((list) => list.uuid === mcpTargetListId)) {
+			mcpTargetListId = selectableLists[0]?.uuid ?? '';
+		}
+	});
+
+	$effect(() => {
+		if (!mcpTargetCardId || !selectableCards.some((card) => card.uuid === mcpTargetCardId)) {
+			mcpTargetCardId = selectableCards[0]?.uuid ?? '';
+		}
+	});
+
+	async function callMcpTool(name: string, args: Record<string, unknown>) {
+		const response = await fetch('/api/mcp', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({
+				jsonrpc: '2.0',
+				id: Date.now(),
+				method: 'tools/call',
+				params: {
+					name,
+					arguments: args
+				}
+			})
+		});
+
+		const payload = await response.json();
+		if (!response.ok) {
+			throw new Error(payload?.error?.message ?? `MCP request failed (${response.status})`);
+		}
+
+		return payload;
+	}
+
+	function getStructuredContent(payload: unknown): Record<string, unknown> {
+		if (!payload || typeof payload !== 'object') {
+			return {};
+		}
+
+		const root = payload as { result?: unknown };
+		if (!root.result || typeof root.result !== 'object') {
+			return {};
+		}
+
+		const result = root.result as { structuredContent?: unknown };
+		if (result.structuredContent && typeof result.structuredContent === 'object') {
+			return result.structuredContent as Record<string, unknown>;
+		}
+
+		return {};
+	}
+
+	function defaultBatchName() {
+		const now = new Date();
+		const pad = (value: number) => String(value).padStart(2, '0');
+		return `ai-batch-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+	}
+
+	function resolveBatchName() {
+		const candidate = mcpBatchName.trim();
+		return candidate.length > 0 ? candidate : defaultBatchName();
+	}
+
+	async function logAiBatchEvent({
+		boardId,
+		userId,
+		batchName,
+		phase,
+		operationCount
+	}: {
+		boardId: string;
+		userId: string;
+		batchName: string;
+		phase: 'started' | 'undone';
+		operationCount: number;
+	}) {
+		await fetch('/api/ai-batches', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({
+				boardId,
+				userId,
+				batchName,
+				phase,
+				operationCount
+			})
+		});
+	}
+
+	function splitValues(raw: string) {
+		return raw
+			.split(',')
+			.map((entry) => entry.trim())
+			.filter((entry) => entry.length > 0);
+	}
+
+	function pushListOperations(operations: PromptOperation[], payload: string) {
+		for (const listName of splitValues(payload)) {
+			operations.push({ type: 'create_list', listName });
+		}
+	}
+
+	function pushCardOperations(operations: PromptOperation[], listName: string, payload: string) {
+		for (const cardTitle of splitValues(payload)) {
+			operations.push({ type: 'create_card', listName: listName.trim(), cardTitle });
+		}
+	}
+
+	function parsePromptOperations(prompt: string): PromptOperation[] {
+		const operations: PromptOperation[] = [];
+		const chunks = prompt
+			.split(/\n+/)
+			.flatMap((line) => line.split(';'))
+			.map((line) => line.trim())
+			.filter((line) => line.length > 0);
+
+		for (const line of chunks) {
+			const lower = line.toLowerCase();
+
+			if (lower.startsWith('list:') || lower.startsWith('liste:')) {
+				const payload = line.slice(line.indexOf(':') + 1).trim();
+				pushListOperations(operations, payload);
+				continue;
+			}
+
+			if (
+				lower.startsWith('create lists:') ||
+				lower.startsWith('create list:') ||
+				lower.startsWith('crée listes:') ||
+				lower.startsWith('crée liste:') ||
+				lower.startsWith('creer listes:') ||
+				lower.startsWith('creer liste:')
+			) {
+				const payload = line.slice(line.indexOf(':') + 1).trim();
+				pushListOperations(operations, payload);
+				continue;
+			}
+
+			if (lower.startsWith('card:') || lower.startsWith('carte:')) {
+				const payload = line.slice(line.indexOf(':') + 1).trim();
+				const [listNameRaw, cardTitleRaw] = payload.split('|');
+				const listName = (listNameRaw ?? '').trim();
+				const cardTitle = (cardTitleRaw ?? '').trim();
+				if (listName && cardTitle) {
+					operations.push({ type: 'create_card', listName, cardTitle });
+				}
+				continue;
+			}
+
+			if (
+				lower.startsWith('tag:') ||
+				lower.startsWith('étiquette:') ||
+				lower.startsWith('etiquette:')
+			) {
+				const payload = line.slice(line.indexOf(':') + 1).trim();
+				const [cardTitleRaw, tagNameRaw] = payload.split('|');
+				const cardTitle = (cardTitleRaw ?? '').trim();
+				const tagName = (tagNameRaw ?? '').trim();
+				if (cardTitle && tagName) {
+					operations.push({ type: 'add_tag', cardTitle, tagName });
+				}
+				continue;
+			}
+
+			const createListMatch = line.match(
+				/cr[eé]e(?:r)?\s+(?:les?\s+)?listes?\s*:?\s*(.+)$/i
+			);
+			if (createListMatch) {
+				pushListOperations(operations, createListMatch[1]);
+				continue;
+			}
+
+			const createCardsInListMatch = line.match(
+				/(?:ajoute|cr[eé]e(?:r)?)\s+(?:des\s+)?cartes?\s+(?:dans|sur)\s+([^:]+)\s*:?\s*(.+)$/i
+			);
+			if (createCardsInListMatch) {
+				pushCardOperations(operations, createCardsInListMatch[1], createCardsInListMatch[2]);
+				continue;
+			}
+
+			const createSingleCardMatch = line.match(
+				/cr[eé]e(?:r)?\s+(?:une?\s+)?carte\s+(.+)\s+(?:dans|sur)\s+(.+)$/i
+			);
+			if (createSingleCardMatch) {
+				const cardTitle = createSingleCardMatch[1].trim();
+				const listName = createSingleCardMatch[2].trim();
+				if (listName && cardTitle) {
+					operations.push({ type: 'create_card', listName, cardTitle });
+				}
+				continue;
+			}
+
+			const addTagMatch = line.match(
+				/(?:ajoute|mets?)\s+(?:le\s+)?tag\s+(.+?)\s+(?:sur|pour|à)\s+(.+)$/i
+			);
+			if (addTagMatch) {
+				const tagName = addTagMatch[1].trim();
+				const cardTitle = addTagMatch[2].trim();
+				if (cardTitle && tagName) {
+					operations.push({ type: 'add_tag', cardTitle, tagName });
+				}
+			}
+		}
+
+		return operations;
+	}
+
+	async function runPromptAssistant() {
+		if (!boardId || !currentUserId) {
+			return;
+		}
+		if (!canEdit) {
+			throw new Error('Read-only mode: you cannot edit this board.');
+		}
+
+		const operations = parsePromptOperations(mcpPrompt);
+		if (operations.length === 0) {
+			throw new Error('Prompt not understood. Use syntax: list:, card: list | title, tag: card | tag.');
+		}
+		const batchName = resolveBatchName();
+		await logAiBatchEvent({
+			boardId,
+			userId: currentUserId,
+			batchName,
+			phase: 'started',
+			operationCount: operations.length
+		});
+
+		const listIdByName = new Map(
+			selectableLists.map((list) => [list.name.trim().toLowerCase(), list.uuid] as const)
+		);
+		const cardIdByTitle = new Map(
+			selectableCards.map((card) => [card.title.trim().toLowerCase(), card.uuid] as const)
+		);
+
+		const logs: string[] = [];
+		const undoOperations: UndoOperation[] = [];
+
+		for (const operation of operations) {
+			if (operation.type === 'create_list') {
+				const payload = await callMcpTool('create_list', {
+					boardId,
+					name: operation.listName,
+					userId: currentUserId
+				});
+				const structured = getStructuredContent(payload);
+				const createdListId = String(structured.id ?? '');
+				if (createdListId) {
+					listIdByName.set(operation.listName.trim().toLowerCase(), createdListId);
+					undoOperations.push({
+						type: 'delete_list',
+						listId: createdListId,
+						listName: operation.listName
+					});
+				}
+				logs.push(`list created: ${operation.listName}`);
+			}
+
+			if (operation.type === 'create_card') {
+				const listId = listIdByName.get(operation.listName.trim().toLowerCase());
+				if (!listId) {
+					throw new Error(`Unknown list "${operation.listName}" for card "${operation.cardTitle}".`);
+				}
+				const payload = await callMcpTool('create_card', {
+					listId,
+					title: operation.cardTitle,
+					userId: currentUserId
+				});
+				const structured = getStructuredContent(payload);
+				const createdCardId = String(structured.id ?? '');
+				if (createdCardId) {
+					cardIdByTitle.set(operation.cardTitle.trim().toLowerCase(), createdCardId);
+					undoOperations.push({
+						type: 'delete_card',
+						cardId: createdCardId,
+						cardTitle: operation.cardTitle
+					});
+				}
+				logs.push(`card created: ${operation.cardTitle} (list: ${operation.listName})`);
+			}
+
+			if (operation.type === 'add_tag') {
+				const cardId = cardIdByTitle.get(operation.cardTitle.trim().toLowerCase());
+				if (!cardId) {
+					throw new Error(`Unknown card "${operation.cardTitle}" for tag "${operation.tagName}".`);
+				}
+				await callMcpTool('add_tag', {
+					cardId,
+					name: operation.tagName,
+					userId: currentUserId
+				});
+				undoOperations.push({
+					type: 'remove_tag',
+					cardId,
+					tagName: operation.tagName,
+					cardTitle: operation.cardTitle
+				});
+				logs.push(`tag added: ${operation.tagName} (card: ${operation.cardTitle})`);
+			}
+		}
+
+		lastAiBatchOperations = undoOperations;
+		lastAiBatchLabel = batchName;
+		mcpBatchName = batchName;
+
+		mcpOutput = JSON.stringify(
+			{
+				steps: logs,
+				operationCount: operations.length,
+				undoCount: undoOperations.length
+			},
+			null,
+			2
+		);
+	}
+
+	async function undoLastAiBatch() {
+		if (!boardId || !currentUserId || lastAiBatchOperations.length === 0) {
+			return;
+		}
+
+		mcpLoading = true;
+		mcpError = '';
+
+		try {
+			const logs: string[] = [];
+			const operations = [...lastAiBatchOperations].reverse();
+
+			for (const operation of operations) {
+				if (operation.type === 'remove_tag') {
+					const response = await fetch('/api/tags', {
+						method: 'DELETE',
+						headers: { 'content-type': 'application/json' },
+						body: JSON.stringify({
+							cardId: operation.cardId,
+							name: operation.tagName,
+							userId: currentUserId
+						})
+					});
+
+					if (!response.ok) {
+						throw new Error(`Undo failed while removing tag "${operation.tagName}".`);
+					}
+					logs.push(`tag removed: ${operation.tagName} (card: ${operation.cardTitle})`);
+				}
+
+				if (operation.type === 'delete_card') {
+					const response = await fetch(
+						`/api/cards?id=${encodeURIComponent(operation.cardId)}&userId=${encodeURIComponent(currentUserId)}`,
+						{
+							method: 'DELETE'
+						}
+					);
+					if (!response.ok) {
+						throw new Error(`Undo failed while deleting card "${operation.cardTitle}".`);
+					}
+					logs.push(`card removed: ${operation.cardTitle}`);
+				}
+
+				if (operation.type === 'delete_list') {
+					const response = await fetch(
+						`/api/lists?id=${encodeURIComponent(operation.listId)}&userId=${encodeURIComponent(currentUserId)}`,
+						{
+							method: 'DELETE'
+						}
+					);
+					if (!response.ok) {
+						throw new Error(`Undo failed while deleting list "${operation.listName}".`);
+					}
+					logs.push(`list removed: ${operation.listName}`);
+				}
+			}
+
+			lastAiBatchOperations = [];
+			const removedBatchName = lastAiBatchLabel || resolveBatchName();
+			await logAiBatchEvent({
+				boardId,
+				userId: currentUserId,
+				batchName: removedBatchName,
+				phase: 'undone',
+				operationCount: operations.length
+			});
+			lastAiBatchLabel = '';
+			mcpOutput = JSON.stringify(
+				{
+					undo: true,
+					steps: logs
+				},
+				null,
+				2
+			);
+			await Promise.all([loadBoardFull(), loadBoardHistory({ silent: true })]);
+		} catch (error) {
+			mcpError = error instanceof Error ? error.message : 'Undo failed.';
+		} finally {
+			mcpLoading = false;
+		}
+	}
+
+	async function runBoardMcpAction() {
+		if (!browser || !boardId || !currentUserId) {
+			return;
+		}
+
+		mcpLoading = true;
+		mcpError = '';
+
+		try {
+			let payload: unknown = null;
+
+			if (mcpAction === 'create_list') {
+				if (!canEdit) throw new Error('Read-only mode: you cannot create lists.');
+				const name = mcpListName.trim();
+				if (!name) throw new Error('List name is required.');
+				payload = await callMcpTool('create_list', {
+					boardId,
+					name,
+					userId: currentUserId
+				});
+			}
+
+			if (mcpAction === 'create_card') {
+				if (!canEdit) throw new Error('Read-only mode: you cannot create cards.');
+				const title = mcpCardTitle.trim();
+				if (!mcpTargetListId) throw new Error('Select a target list first.');
+				if (!title) throw new Error('Card title is required.');
+				payload = await callMcpTool('create_card', {
+					listId: mcpTargetListId,
+					title,
+					userId: currentUserId
+				});
+			}
+
+			if (mcpAction === 'add_tag') {
+				if (!canEdit) throw new Error('Read-only mode: you cannot add tags.');
+				const name = mcpTagName.trim();
+				if (!mcpTargetCardId) throw new Error('Select a target card first.');
+				if (!name) throw new Error('Tag name is required.');
+				payload = await callMcpTool('add_tag', {
+					cardId: mcpTargetCardId,
+					name,
+					userId: currentUserId
+				});
+			}
+
+			if (mcpAction === 'get_board_full') {
+				payload = await callMcpTool('get_board_full', {
+					boardId,
+					userId: currentUserId
+				});
+			}
+
+			if (mcpAction === 'prompt_assistant') {
+				await runPromptAssistant();
+			} else {
+				mcpOutput = JSON.stringify(payload ?? {}, null, 2);
+			}
+
+			if (mcpAction !== 'get_board_full') {
+				await Promise.all([loadBoardFull(), loadBoardHistory({ silent: true })]);
+			}
+		} catch (error) {
+			mcpError = error instanceof Error ? error.message : 'MCP action failed.';
+		} finally {
+			mcpLoading = false;
 		}
 	}
 
@@ -413,6 +931,15 @@
 			>
 				Filter
 			</button>
+			<button
+				type="button"
+				onclick={() => (mcpPanelOpen = !mcpPanelOpen)}
+				class="hover:cursor-pointer rounded-md border border-sky-300/25 bg-slate-700/75 px-3 py-2 text-sm font-semibold text-slate-100 transition-colors hover:bg-slate-600/90"
+				aria-expanded={mcpPanelOpen}
+				aria-controls="board-mcp-panel"
+			>
+				AI Tools
+			</button>
 			{#if boardId && canManage}
 				<a
 					href={resolve(`/b/${boardId}/settings`)}
@@ -422,6 +949,200 @@
 				</a>
 			{/if}
 		</div>
+		{#if mcpPanelOpen}
+			<div
+				id="board-mcp-panel"
+				class="mb-3 rounded-xl border border-sky-300/20 bg-slate-800/65 p-3 text-slate-100 shadow-sm shadow-slate-950/40"
+			>
+				<div class="flex flex-wrap items-end gap-2">
+					<div class="flex min-w-55 flex-col gap-1">
+						<label
+							for="board-mcp-action"
+							class="select-none text-[11px] font-semibold uppercase tracking-wide text-slate-300"
+						>
+							Action
+						</label>
+						<select
+							id="board-mcp-action"
+							class="rounded-md border border-slate-500/70 bg-slate-700/80 px-2 py-1 text-sm text-slate-100"
+							bind:value={mcpAction}
+						>
+							<option value="create_list">Create list (MCP)</option>
+							<option value="create_card">Create card (MCP)</option>
+							<option value="add_tag">Add tag (MCP)</option>
+							<option value="get_board_full">Inspect board (MCP)</option>
+							<option value="prompt_assistant">Prompt IA (multi-actions)</option>
+						</select>
+					</div>
+
+					{#if mcpAction === 'create_list'}
+						<div class="flex min-w-70 flex-col gap-1">
+							<label
+								for="board-mcp-list-name"
+								class="select-none text-[11px] font-semibold uppercase tracking-wide text-slate-300"
+							>
+								List name
+							</label>
+							<input
+								id="board-mcp-list-name"
+								type="text"
+								class="rounded-md border border-slate-500/70 bg-slate-700/80 px-2 py-1 text-sm text-slate-100"
+								placeholder="Example: Sprint Backlog"
+								bind:value={mcpListName}
+							/>
+						</div>
+					{/if}
+
+					{#if mcpAction === 'create_card'}
+						<div class="flex min-w-55 flex-col gap-1">
+							<label
+								for="board-mcp-list"
+								class="select-none text-[11px] font-semibold uppercase tracking-wide text-slate-300"
+							>
+								Target list
+							</label>
+							<select
+								id="board-mcp-list"
+								class="rounded-md border border-slate-500/70 bg-slate-700/80 px-2 py-1 text-sm text-slate-100"
+								bind:value={mcpTargetListId}
+							>
+								{#if selectableLists.length === 0}
+									<option value="">No list available</option>
+								{:else}
+									{#each selectableLists as list (list.uuid)}
+										<option value={list.uuid}>{list.name}</option>
+									{/each}
+								{/if}
+							</select>
+						</div>
+						<div class="flex min-w-70 flex-col gap-1">
+							<label
+								for="board-mcp-card-title"
+								class="select-none text-[11px] font-semibold uppercase tracking-wide text-slate-300"
+							>
+								Card title
+							</label>
+							<input
+								id="board-mcp-card-title"
+								type="text"
+								class="rounded-md border border-slate-500/70 bg-slate-700/80 px-2 py-1 text-sm text-slate-100"
+								placeholder="Example: Implémenter OAuth"
+								bind:value={mcpCardTitle}
+							/>
+						</div>
+					{/if}
+
+					{#if mcpAction === 'add_tag'}
+						<div class="flex min-w-70 flex-col gap-1">
+							<label
+								for="board-mcp-card"
+								class="select-none text-[11px] font-semibold uppercase tracking-wide text-slate-300"
+							>
+								Target card
+							</label>
+							<select
+								id="board-mcp-card"
+								class="rounded-md border border-slate-500/70 bg-slate-700/80 px-2 py-1 text-sm text-slate-100"
+								bind:value={mcpTargetCardId}
+							>
+								{#if selectableCards.length === 0}
+									<option value="">No card available</option>
+								{:else}
+									{#each selectableCards as card (card.uuid)}
+										<option value={card.uuid}>{card.listName} / {card.title}</option>
+									{/each}
+								{/if}
+							</select>
+						</div>
+						<div class="flex min-w-55 flex-col gap-1">
+							<label
+								for="board-mcp-tag-name"
+								class="select-none text-[11px] font-semibold uppercase tracking-wide text-slate-300"
+							>
+								Tag name
+							</label>
+							<input
+								id="board-mcp-tag-name"
+								type="text"
+								class="rounded-md border border-slate-500/70 bg-slate-700/80 px-2 py-1 text-sm text-slate-100"
+								placeholder="Example: urgent"
+								bind:value={mcpTagName}
+							/>
+						</div>
+					{/if}
+
+					{#if mcpAction === 'prompt_assistant'}
+						<div class="flex min-w-[38rem] flex-1 flex-col gap-1">
+							<label
+								for="board-mcp-batch-name"
+								class="select-none text-[11px] font-semibold uppercase tracking-wide text-slate-300"
+							>
+								Batch name (optional)
+							</label>
+							<input
+								id="board-mcp-batch-name"
+								type="text"
+								class="rounded-md border border-slate-500/70 bg-slate-700/80 px-2 py-1 text-sm text-slate-100"
+								placeholder="ex: sprint-setup-v1"
+								bind:value={mcpBatchName}
+							/>
+							<label
+								for="board-mcp-prompt"
+								class="select-none text-[11px] font-semibold uppercase tracking-wide text-slate-300"
+							>
+								Prompt IA
+							</label>
+							<textarea
+								id="board-mcp-prompt"
+								rows="5"
+								class="rounded-md border border-slate-500/70 bg-slate-700/80 px-2 py-1 text-sm text-slate-100"
+								bind:value={mcpPrompt}
+							></textarea>
+							<div class="text-xs text-slate-300">
+								<p>Format recommandé:</p>
+								<p><code>list: nom1, nom2, nom3</code></p>
+								<p><code>card: listName | cardName</code></p>
+								<p><code>tag: cardName | tagName</code></p>
+								<p class="mt-1">Exemple naturel:</p>
+								<p>
+									Crée les listes Todo, Doing, Done; ajoute des cartes dans Todo: Préparer
+									sprint, Écrire tests; ajoute le tag urgent sur Préparer sprint
+								</p>
+							</div>
+						</div>
+					{/if}
+
+					<button
+						type="button"
+						class="mb-0.5 h-9 rounded-md bg-sky-600 px-3 text-sm font-semibold text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
+						onclick={() => void runBoardMcpAction()}
+						disabled={mcpLoading}
+					>
+						{mcpLoading ? 'Running...' : 'Run MCP Action'}
+					</button>
+					<button
+						type="button"
+						class="mb-0.5 h-9 rounded-md border border-amber-300/40 bg-amber-500/20 px-3 text-sm font-semibold text-amber-100 transition-colors hover:bg-amber-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+						onclick={() => void undoLastAiBatch()}
+						disabled={mcpLoading || lastAiBatchOperations.length === 0}
+					>
+						Undo last AI batch
+					</button>
+				</div>
+
+				{#if lastAiBatchOperations.length > 0}
+					<p class="mt-2 text-xs text-amber-100/90">
+						Undo disponible pour le batch: {lastAiBatchLabel || `${lastAiBatchOperations.length} operations`}
+					</p>
+				{/if}
+
+				{#if mcpError}
+					<p class="mt-2 rounded-md border border-rose-300/30 bg-rose-500/15 px-3 py-2 text-sm text-rose-100">
+						{mcpError}
+					</p>
+				{/if}
+			</div>
+		{/if}
 		{#if inviteMessage}
 			<p
 				class="mb-3 rounded-md border border-emerald-300/30 bg-emerald-500/15 px-3 py-2 text-sm text-emerald-100"
