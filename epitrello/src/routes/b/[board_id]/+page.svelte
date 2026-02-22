@@ -1019,6 +1019,14 @@
 				AI Tools
 			</button>
 			{#if boardId && canManage}
+				<button
+					type="button"
+					onclick={() => void clearBoardContent()}
+					disabled={mcpLoading}
+					class="rounded-md border border-rose-300/30 bg-rose-500/15 px-3 py-2 text-sm font-semibold text-rose-100 transition-colors hover:bg-rose-500/25 disabled:cursor-not-allowed disabled:opacity-60"
+				>
+					Clear Board
+				</button>
 				<a
 					href={resolve(`/b/${boardId}/settings`)}
 					class="rounded-md border border-sky-300/25 bg-slate-700/75 px-3 py-2 text-sm font-semibold text-slate-100 transition-colors hover:bg-slate-600/90"
@@ -1206,16 +1214,6 @@
 					>
 						Undo last AI batch
 					</button>
-					{#if canManage}
-						<button
-							type="button"
-							class="mb-0.5 h-9 rounded-md border border-rose-300/40 bg-rose-500/20 px-3 text-sm font-semibold text-rose-100 transition-colors hover:bg-rose-500/30 disabled:cursor-not-allowed disabled:opacity-60"
-							onclick={() => void clearBoardContent()}
-							disabled={mcpLoading}
-						>
-							Clear board
-						</button>
-					{/if}
 				</div>
 
 				{#if lastAiBatchOperations.length > 0}
