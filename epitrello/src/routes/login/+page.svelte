@@ -175,6 +175,7 @@
 				<p class="mb-2 text-sm text-slate-300">Or continue with</p>
 				<a
 					href={resolve('/auth/github')}
+					data-sveltekit-preload-data="off"
 					class="mb-2 inline-flex w-64 items-center justify-center gap-4 rounded-md border border-slate-500/60 bg-slate-800 px-4 py-2 font-medium text-slate-100 shadow-sm shadow-slate-950/60 transition-all hover:bg-slate-700"
 				>
 					<img src={GithubLogo} alt="GitHub Logo" class="w-6 invert" />
@@ -182,6 +183,7 @@
 				</a>
 				<a
 					href={resolve('/auth/microsoft')}
+					data-sveltekit-preload-data="off"
 					class="inline-flex w-64 items-center justify-center gap-4 rounded-md border border-sky-300/25 bg-sky-900/35 px-4 py-2 font-medium text-slate-100 shadow-sm shadow-sky-950/60 transition-all hover:bg-sky-800/50"
 				>
 					<img src={MicrosoftLogo} alt="Microsoft Logo" class="w-6" />

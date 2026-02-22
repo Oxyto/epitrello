@@ -4,10 +4,25 @@ import { redirect, isRedirect } from '@sveltejs/kit';
 import { UserConnector } from '$lib/server/redisConnector';
 import type { UUID } from 'crypto';
 
-const redirectUri = 'http://localhost:5173/auth/github/callback';
+const defaultRedirectUri = 'http://localhost:5173/auth/github/callback';
+const stateCookieName = 'oauth_github_state';
+const githubUserAgent = 'EpiTrello-OAuth/1.0';
 
-export const GET: RequestHandler = async ({ url }) => {
+export const GET: RequestHandler = async ({ url, cookies }) => {
 	const code = url.searchParams.get('code');
+	const state = url.searchParams.get('state');
+	const expectedState = cookies.get(stateCookieName);
+
+	cookies.delete(stateCookieName, { path: '/' });
+
+	if (!state || !expectedState || state !== expectedState) {
+		console.error('GitHub callback avec state invalide', {
+			hasState: Boolean(state),
+			hasExpectedState: Boolean(expectedState)
+		});
+		throw redirect(302, '/login?error=github_state');
+	}
+
 	if (!code) {
 		console.error('GitHub callback sans ?code');
 		throw redirect(302, '/login?error=github_code');
@@ -15,6 +30,7 @@ export const GET: RequestHandler = async ({ url }) => {
 
 	const clientId = env.GITHUB_CLIENT_ID;
 	const clientSecret = env.GITHUB_CLIENT_SECRET;
+	const redirectUri = env.GITHUB_REDIRECT_URI ?? defaultRedirectUri;
 
 	if (!clientId || !clientSecret) {
 		console.error('GITHUB_CLIENT_ID ou GITHUB_CLIENT_SECRET manquants');
@@ -25,15 +41,16 @@ export const GET: RequestHandler = async ({ url }) => {
 		const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
 			method: 'POST',
 			headers: {
-				'Content-Type': 'application/json',
-				Accept: 'application/json'
+				'Content-Type': 'application/x-www-form-urlencoded',
+				Accept: 'application/json',
+				'User-Agent': githubUserAgent
 			},
-			body: JSON.stringify({
+			body: new URLSearchParams({
 				client_id: clientId,
 				client_secret: clientSecret,
 				code,
 				redirect_uri: redirectUri
-			})
+			}).toString()
 		});
 
 		if (!tokenRes.ok) {
@@ -52,7 +69,9 @@ export const GET: RequestHandler = async ({ url }) => {
 		const userRes = await fetch('https://api.github.com/user', {
 			headers: {
 				Authorization: `Bearer ${accessToken}`,
-				Accept: 'application/json'
+				Accept: 'application/vnd.github+json',
+				'User-Agent': githubUserAgent,
+				'X-GitHub-Api-Version': '2022-11-28'
 			}
 		});
 
@@ -72,7 +91,9 @@ export const GET: RequestHandler = async ({ url }) => {
 			const emailsRes = await fetch('https://api.github.com/user/emails', {
 				headers: {
 					Authorization: `Bearer ${accessToken}`,
-					Accept: 'application/json'
+					Accept: 'application/vnd.github+json',
+					'User-Agent': githubUserAgent,
+					'X-GitHub-Api-Version': '2022-11-28'
 				}
 			});
 

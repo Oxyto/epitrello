@@ -4,15 +4,29 @@ import { redirect, isRedirect } from '@sveltejs/kit';
 import { UserConnector } from '$lib/server/redisConnector';
 import type { UUID } from 'crypto';
 
-const redirectUri = 'http://localhost:5173/auth/microsoft/callback';
+const defaultRedirectUri = 'http://localhost:5173/auth/microsoft/callback';
+const stateCookieName = 'oauth_microsoft_state';
+const graphUserAgent = 'EpiTrello-OAuth/1.0';
 
-export const GET: RequestHandler = async ({ url }) => {
+export const GET: RequestHandler = async ({ url, cookies }) => {
 	const code = url.searchParams.get('code');
 	const errorParam = url.searchParams.get('error');
+	const state = url.searchParams.get('state');
+	const expectedState = cookies.get(stateCookieName);
+
+	cookies.delete(stateCookieName, { path: '/' });
 
 	if (errorParam) {
 		console.error('Microsoft callback avec ?error=', errorParam);
 		throw redirect(302, '/login?error=microsoft_denied');
+	}
+
+	if (!state || !expectedState || state !== expectedState) {
+		console.error('Microsoft callback avec state invalide', {
+			hasState: Boolean(state),
+			hasExpectedState: Boolean(expectedState)
+		});
+		throw redirect(302, '/login?error=microsoft_state');
 	}
 
 	if (!code) {
@@ -23,6 +37,7 @@ export const GET: RequestHandler = async ({ url }) => {
 	const clientId = env.MICROSOFT_CLIENT_ID;
 	const clientSecret = env.MICROSOFT_CLIENT_SECRET;
 	const tenantId = env.MICROSOFT_TENANT_ID ?? 'common';
+	const redirectUri = env.MICROSOFT_REDIRECT_URI ?? defaultRedirectUri;
 
 	if (!clientId || !clientSecret) {
 		console.error('MICROSOFT_CLIENT_ID ou MICROSOFT_CLIENT_SECRET manquants');
@@ -35,7 +50,9 @@ export const GET: RequestHandler = async ({ url }) => {
 			{
 				method: 'POST',
 				headers: {
-					'Content-Type': 'application/x-www-form-urlencoded'
+					'Content-Type': 'application/x-www-form-urlencoded',
+					Accept: 'application/json',
+					'User-Agent': graphUserAgent
 				},
 				body: new URLSearchParams({
 					client_id: clientId,
@@ -69,7 +86,9 @@ export const GET: RequestHandler = async ({ url }) => {
 
 		const meRes = await fetch('https://graph.microsoft.com/v1.0/me', {
 			headers: {
-				Authorization: `Bearer ${accessToken}`
+				Authorization: `Bearer ${accessToken}`,
+				Accept: 'application/json',
+				'User-Agent': graphUserAgent
 			}
 		});
 

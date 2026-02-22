@@ -47,6 +47,7 @@ Create a `.env` file with the following variables:
 REDIS_URL=redis://localhost:6379
 GITHUB_CLIENT_ID=
 GITHUB_CLIENT_SECRET=
+GITHUB_REDIRECT_URI=http://localhost:5173/auth/github/callback
 MICROSOFT_CLIENT_ID=
 MICROSOFT_CLIENT_SECRET=
 MICROSOFT_TENANT_ID=common
