@@ -55,6 +55,7 @@
 	let mcpBatchName = $state('');
 	let lastAiBatchOperations = $state<UndoOperation[]>([]);
 	let lastAiBatchLabel = $state('');
+	let aiBatchMutationInFlight = $state(false);
 
 	let lists = $state<UiList[]>([]);
 	let boardMembers = $state<BoardMember[]>([]);
@@ -428,112 +429,117 @@
 			throw new Error('Read-only mode: you cannot edit this board.');
 		}
 
-		const operations = parsePromptOperations(mcpPrompt);
-		if (operations.length === 0) {
-			throw new Error('Prompt not understood. Use syntax: list:, card: list | title, tag: card | tag.');
-		}
-		const batchName = resolveBatchName();
-		await logAiBatchEvent({
-			boardId,
-			userId: currentUserId,
-			batchName,
-			phase: 'started',
-			operationCount: operations.length
-		});
-
-		const listIdByName = new Map(
-			selectableLists.map((list) => [list.name.trim().toLowerCase(), list.uuid] as const)
-		);
-		const cardIdByTitle = new Map(
-			selectableCards.map((card) => [card.title.trim().toLowerCase(), card.uuid] as const)
-		);
-
-		const logs: string[] = [];
-		const undoOperations: UndoOperation[] = [];
-
-		for (const operation of operations) {
-			if (operation.type === 'create_list') {
-				const payload = await callMcpTool('create_list', {
-					boardId,
-					name: operation.listName,
-					userId: currentUserId
-				});
-				const structured = getStructuredContent(payload);
-				const createdListId = String(structured.id ?? '');
-				if (createdListId) {
-					listIdByName.set(operation.listName.trim().toLowerCase(), createdListId);
-					undoOperations.push({
-						type: 'delete_list',
-						listId: createdListId,
-						listName: operation.listName
-					});
-				}
-				logs.push(`list created: ${operation.listName}`);
+		aiBatchMutationInFlight = true;
+		try {
+			const operations = parsePromptOperations(mcpPrompt);
+			if (operations.length === 0) {
+				throw new Error('Prompt not understood. Use syntax: list:, card: list | title, tag: card | tag.');
 			}
+			const batchName = resolveBatchName();
+			await logAiBatchEvent({
+				boardId,
+				userId: currentUserId,
+				batchName,
+				phase: 'started',
+				operationCount: operations.length
+			});
 
-			if (operation.type === 'create_card') {
-				const listId = listIdByName.get(operation.listName.trim().toLowerCase());
-				if (!listId) {
-					throw new Error(`Unknown list "${operation.listName}" for card "${operation.cardTitle}".`);
+			const listIdByName = new Map(
+				selectableLists.map((list) => [list.name.trim().toLowerCase(), list.uuid] as const)
+			);
+			const cardIdByTitle = new Map(
+				selectableCards.map((card) => [card.title.trim().toLowerCase(), card.uuid] as const)
+			);
+
+			const logs: string[] = [];
+			const undoOperations: UndoOperation[] = [];
+
+			for (const operation of operations) {
+				if (operation.type === 'create_list') {
+					const payload = await callMcpTool('create_list', {
+						boardId,
+						name: operation.listName,
+						userId: currentUserId
+					});
+					const structured = getStructuredContent(payload);
+					const createdListId = String(structured.id ?? '');
+					if (createdListId) {
+						listIdByName.set(operation.listName.trim().toLowerCase(), createdListId);
+						undoOperations.push({
+							type: 'delete_list',
+							listId: createdListId,
+							listName: operation.listName
+						});
+					}
+					logs.push(`list created: ${operation.listName}`);
 				}
-				const payload = await callMcpTool('create_card', {
-					listId,
-					title: operation.cardTitle,
-					userId: currentUserId
-				});
-				const structured = getStructuredContent(payload);
-				const createdCardId = String(structured.id ?? '');
-				if (createdCardId) {
-					cardIdByTitle.set(operation.cardTitle.trim().toLowerCase(), createdCardId);
+
+				if (operation.type === 'create_card') {
+					const listId = listIdByName.get(operation.listName.trim().toLowerCase());
+					if (!listId) {
+						throw new Error(`Unknown list "${operation.listName}" for card "${operation.cardTitle}".`);
+					}
+					const payload = await callMcpTool('create_card', {
+						listId,
+						title: operation.cardTitle,
+						userId: currentUserId
+					});
+					const structured = getStructuredContent(payload);
+					const createdCardId = String(structured.id ?? '');
+					if (createdCardId) {
+						cardIdByTitle.set(operation.cardTitle.trim().toLowerCase(), createdCardId);
+						undoOperations.push({
+							type: 'delete_card',
+							cardId: createdCardId,
+							cardTitle: operation.cardTitle
+						});
+					}
+					logs.push(`card created: ${operation.cardTitle} (list: ${operation.listName})`);
+				}
+
+				if (operation.type === 'add_tag') {
+					const cardId = cardIdByTitle.get(operation.cardTitle.trim().toLowerCase());
+					if (!cardId) {
+						throw new Error(`Unknown card "${operation.cardTitle}" for tag "${operation.tagName}".`);
+					}
+					await callMcpTool('add_tag', {
+						cardId,
+						name: operation.tagName,
+						userId: currentUserId
+					});
 					undoOperations.push({
-						type: 'delete_card',
-						cardId: createdCardId,
+						type: 'remove_tag',
+						cardId,
+						tagName: operation.tagName,
 						cardTitle: operation.cardTitle
 					});
+					logs.push(`tag added: ${operation.tagName} (card: ${operation.cardTitle})`);
 				}
-				logs.push(`card created: ${operation.cardTitle} (list: ${operation.listName})`);
 			}
 
-			if (operation.type === 'add_tag') {
-				const cardId = cardIdByTitle.get(operation.cardTitle.trim().toLowerCase());
-				if (!cardId) {
-					throw new Error(`Unknown card "${operation.cardTitle}" for tag "${operation.tagName}".`);
-				}
-				await callMcpTool('add_tag', {
-					cardId,
-					name: operation.tagName,
-					userId: currentUserId
-				});
-				undoOperations.push({
-					type: 'remove_tag',
-					cardId,
-					tagName: operation.tagName,
-					cardTitle: operation.cardTitle
-				});
-				logs.push(`tag added: ${operation.tagName} (card: ${operation.cardTitle})`);
-			}
+			lastAiBatchOperations = undoOperations;
+			lastAiBatchLabel = batchName;
+			mcpBatchName = batchName;
+			await logAiBatchEvent({
+				boardId,
+				userId: currentUserId,
+				batchName,
+				phase: 'undo_available',
+				operationCount: undoOperations.length
+			});
+
+			mcpOutput = JSON.stringify(
+				{
+					steps: logs,
+					operationCount: operations.length,
+					undoCount: undoOperations.length
+				},
+				null,
+				2
+			);
+		} finally {
+			aiBatchMutationInFlight = false;
 		}
-
-		lastAiBatchOperations = undoOperations;
-		lastAiBatchLabel = batchName;
-		mcpBatchName = batchName;
-		await logAiBatchEvent({
-			boardId,
-			userId: currentUserId,
-			batchName,
-			phase: 'undo_available',
-			operationCount: undoOperations.length
-		});
-
-		mcpOutput = JSON.stringify(
-			{
-				steps: logs,
-				operationCount: operations.length,
-				undoCount: undoOperations.length
-			},
-			null,
-			2
-		);
 	}
 
 	async function undoLastAiBatch() {
@@ -543,6 +549,7 @@
 
 		mcpLoading = true;
 		mcpError = '';
+		aiBatchMutationInFlight = true;
 
 		try {
 			const logs: string[] = [];
@@ -616,6 +623,7 @@
 			mcpError = error instanceof Error ? error.message : 'Undo failed.';
 		} finally {
 			mcpLoading = false;
+			aiBatchMutationInFlight = false;
 		}
 	}
 
@@ -788,6 +796,10 @@
 			}
 
 			if (actorId && actorId === currentUserId) {
+				if (!aiBatchMutationInFlight && lastAiBatchOperations.length > 0) {
+					lastAiBatchOperations = [];
+					lastAiBatchLabel = '';
+				}
 				void loadBoardHistory({ silent: true });
 				return;
 			}
