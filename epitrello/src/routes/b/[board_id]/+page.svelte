@@ -52,6 +52,10 @@
 	let mcpPrompt = $state(
 		'list: Todo, Doing, Done\ncard: Todo | Préparer sprint\ncard: Todo | Écrire tests\ntag: Préparer sprint | urgent'
 	);
+	let mcpUseAiPlanner = $state(false);
+	let mcpAiProvider = $state<'openai' | 'openrouter'>('openai');
+	let mcpAiModel = $state('gpt-4.1-mini');
+	let mcpAiApiKey = $state('');
 	let mcpBatchName = $state('');
 	let lastAiBatchOperations = $state<UndoOperation[]>([]);
 	let lastAiBatchLabel = $state('');
@@ -436,12 +440,7 @@
 		mcpPreviewBlockedCount = 0;
 	}
 
-	function previewPromptAssistant() {
-		const operations = parsePromptOperations(mcpPrompt);
-		if (operations.length === 0) {
-			throw new Error('Prompt not understood. Use syntax: list:, card: list | title, tag: card | tag.');
-		}
-
+	function buildPromptPreview(operations: PromptOperation[]) {
 		const knownLists = new Set(selectableLists.map((list) => list.name.trim().toLowerCase()));
 		const knownCards = new Set(selectableCards.map((card) => card.title.trim().toLowerCase()));
 		const previewEntries: BatchPreviewEntry[] = [];
@@ -506,6 +505,67 @@
 		mcpPreviewBlockedCount = blockedCount;
 	}
 
+	async function planPromptOperationsWithAi() {
+		if (!boardId || !currentUserId) {
+			throw new Error('Board or user context is missing.');
+		}
+
+		const apiKey = mcpAiApiKey.trim();
+		const model = mcpAiModel.trim();
+		if (!apiKey) {
+			throw new Error('AI API key is required when AI planner is enabled.');
+		}
+		if (!model) {
+			throw new Error('AI model is required when AI planner is enabled.');
+		}
+
+		const response = await fetch('/api/ai/plan', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({
+				boardId,
+				userId: currentUserId,
+				prompt: mcpPrompt,
+				provider: mcpAiProvider,
+				model,
+				apiKey
+			})
+		});
+		const payload = (await response.json().catch(() => ({}))) as {
+			error?: string;
+			message?: string;
+			operations?: PromptOperation[];
+		};
+
+		if (!response.ok) {
+			throw new Error(payload.error ?? payload.message ?? 'AI planner failed.');
+		}
+
+		const operations = Array.isArray(payload.operations) ? payload.operations : [];
+		if (operations.length === 0) {
+			throw new Error('AI planner returned no operations.');
+		}
+
+		return operations;
+	}
+
+	async function resolvePromptOperations() {
+		if (mcpUseAiPlanner) {
+			return planPromptOperationsWithAi();
+		}
+
+		const operations = parsePromptOperations(mcpPrompt);
+		if (operations.length === 0) {
+			throw new Error('Prompt not understood. Use syntax: list:, card: list | title, tag: card | tag.');
+		}
+		return operations;
+	}
+
+	async function previewPromptAssistant() {
+		const operations = await resolvePromptOperations();
+		buildPromptPreview(operations);
+	}
+
 	async function runPromptAssistant() {
 		if (!boardId || !currentUserId) {
 			return;
@@ -516,10 +576,8 @@
 
 		aiBatchMutationInFlight = true;
 		try {
-			const operations = parsePromptOperations(mcpPrompt);
-			if (operations.length === 0) {
-				throw new Error('Prompt not understood. Use syntax: list:, card: list | title, tag: card | tag.');
-			}
+			const operations = await resolvePromptOperations();
+			buildPromptPreview(operations);
 			const batchName = resolveBatchName();
 			await logAiBatchEvent({
 				boardId,
@@ -1015,6 +1073,13 @@
 	});
 
 	$effect(() => {
+		void mcpUseAiPlanner;
+		if (mcpAction === 'prompt_assistant') {
+			resetPromptPreview();
+		}
+	});
+
+	$effect(() => {
 		if (!browser || !ready || !boardId || !currentUserId) {
 			return;
 		}
@@ -1276,11 +1341,74 @@
 								class="rounded-md border border-slate-500/70 bg-slate-700/80 px-2 py-1 text-sm text-slate-100"
 								bind:value={mcpPrompt}
 							></textarea>
+							<label class="mt-1 inline-flex items-center gap-2 text-xs text-slate-300">
+								<input
+									type="checkbox"
+									class="h-4 w-4 rounded border-slate-500/70 bg-slate-700/80"
+									bind:checked={mcpUseAiPlanner}
+								/>
+								Use AI planner (user token + model)
+							</label>
+							{#if mcpUseAiPlanner}
+								<div class="grid grid-cols-1 gap-2 md:grid-cols-3">
+									<div class="flex flex-col gap-1">
+										<label
+											for="board-mcp-ai-provider"
+											class="select-none text-[11px] font-semibold uppercase tracking-wide text-slate-300"
+										>
+											Provider
+										</label>
+										<select
+											id="board-mcp-ai-provider"
+											class="rounded-md border border-slate-500/70 bg-slate-700/80 px-2 py-1 text-sm text-slate-100"
+											bind:value={mcpAiProvider}
+										>
+											<option value="openai">OpenAI</option>
+											<option value="openrouter">OpenRouter</option>
+										</select>
+									</div>
+									<div class="flex flex-col gap-1">
+										<label
+											for="board-mcp-ai-model"
+											class="select-none text-[11px] font-semibold uppercase tracking-wide text-slate-300"
+										>
+											Model
+										</label>
+										<input
+											id="board-mcp-ai-model"
+											type="text"
+											class="rounded-md border border-slate-500/70 bg-slate-700/80 px-2 py-1 text-sm text-slate-100"
+											placeholder="gpt-4.1-mini"
+											bind:value={mcpAiModel}
+										/>
+									</div>
+									<div class="flex flex-col gap-1">
+										<label
+											for="board-mcp-ai-key"
+											class="select-none text-[11px] font-semibold uppercase tracking-wide text-slate-300"
+										>
+											API key
+										</label>
+										<input
+											id="board-mcp-ai-key"
+											type="password"
+											class="rounded-md border border-slate-500/70 bg-slate-700/80 px-2 py-1 text-sm text-slate-100"
+											placeholder="sk-..."
+											bind:value={mcpAiApiKey}
+										/>
+									</div>
+								</div>
+								<p class="text-xs text-slate-400">
+									Token is used server-side for this request and not written to board history.
+								</p>
+							{/if}
 							<div class="text-xs text-slate-300">
-								<p>Format recommandé:</p>
-								<p><code>list: nom1, nom2, nom3</code></p>
-								<p><code>card: listName | cardName</code></p>
-								<p><code>tag: cardName | tagName</code></p>
+								<p>{mcpUseAiPlanner ? 'Prompt naturel recommandé:' : 'Format recommandé:'}</p>
+								{#if !mcpUseAiPlanner}
+									<p><code>list: nom1, nom2, nom3</code></p>
+									<p><code>card: listName | cardName</code></p>
+									<p><code>tag: cardName | tagName</code></p>
+								{/if}
 								<p class="mt-1">Exemple naturel:</p>
 								<p>
 									Crée les listes Todo, Doing, Done; ajoute des cartes dans Todo: Préparer
@@ -1302,10 +1430,10 @@
 						<button
 							type="button"
 							class="mb-0.5 h-9 rounded-md border border-cyan-300/40 bg-cyan-500/20 px-3 text-sm font-semibold text-cyan-100 transition-colors hover:bg-cyan-500/30 disabled:cursor-not-allowed disabled:opacity-60"
-							onclick={() => {
+							onclick={async () => {
 								mcpError = '';
 								try {
-									previewPromptAssistant();
+									await previewPromptAssistant();
 								} catch (error) {
 									mcpError = error instanceof Error ? error.message : 'Preview failed.';
 								}
