@@ -21,7 +21,12 @@ export const POST: RequestHandler = async ({ request }) => {
 	const phase = normalizeText(body?.phase);
 	const operationCount = Number.parseInt(String(body?.operationCount ?? '0'), 10);
 
-	if (!boardId || !userId || !batchName || (phase !== 'started' && phase !== 'undone')) {
+	if (
+		!boardId ||
+		!userId ||
+		!batchName ||
+		(phase !== 'started' && phase !== 'undo_available' && phase !== 'undone')
+	) {
 		throw error(400, 'boardId, userId, batchName and valid phase are required');
 	}
 
@@ -34,7 +39,24 @@ export const POST: RequestHandler = async ({ request }) => {
 			source: 'unknown',
 			history: {
 				action: 'ai.batch.started',
-				message: `Started AI batch "${batchName}" (${operationCount} action(s)). It can be removed with Undo using batch "${batchName}".`,
+				message: `Started AI batch "${batchName}" (${operationCount} action(s)).`,
+				metadata: {
+					batchName,
+					phase,
+					operationCount: Number.isFinite(operationCount) ? operationCount : 0
+				}
+			}
+		});
+	}
+
+	if (phase === 'undo_available') {
+		notifyBoardUpdated({
+			boardId,
+			actorId: userId,
+			source: 'unknown',
+			history: {
+				action: 'ai.batch.undo_available',
+				message: `You can undo last batch "${batchName}" now with "Undo last AI batch".`,
 				metadata: {
 					batchName,
 					phase,

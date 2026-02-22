@@ -286,7 +286,7 @@
 		boardId: string;
 		userId: string;
 		batchName: string;
-		phase: 'started' | 'undone';
+		phase: 'started' | 'undo_available' | 'undone';
 		operationCount: number;
 	}) {
 		await fetch('/api/ai-batches', {
@@ -517,6 +517,13 @@
 		lastAiBatchOperations = undoOperations;
 		lastAiBatchLabel = batchName;
 		mcpBatchName = batchName;
+		await logAiBatchEvent({
+			boardId,
+			userId: currentUserId,
+			batchName,
+			phase: 'undo_available',
+			operationCount: undoOperations.length
+		});
 
 		mcpOutput = JSON.stringify(
 			{
