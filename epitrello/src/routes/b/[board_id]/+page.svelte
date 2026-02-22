@@ -70,10 +70,19 @@
 		| { type: 'create_card'; listName: string; cardTitle: string }
 		| { type: 'add_tag'; cardTitle: string; tagName: string };
 
+	type BatchPreviewEntry = {
+		status: 'ok' | 'warning' | 'blocked';
+		description: string;
+	};
+
 	type UndoOperation =
 		| { type: 'delete_list'; listId: string; listName: string }
 		| { type: 'delete_card'; cardId: string; cardTitle: string }
 		| { type: 'remove_tag'; cardId: string; tagName: string; cardTitle: string };
+
+	let mcpPreviewEntries = $state<BatchPreviewEntry[]>([]);
+	let mcpPreviewSummary = $state('');
+	let mcpPreviewBlockedCount = $state(0);
 
 	function applyLoadedState(payload: BoardFullResponse) {
 		if (!payload || !payload.board) return;
@@ -421,6 +430,82 @@
 		return operations;
 	}
 
+	function resetPromptPreview() {
+		mcpPreviewEntries = [];
+		mcpPreviewSummary = '';
+		mcpPreviewBlockedCount = 0;
+	}
+
+	function previewPromptAssistant() {
+		const operations = parsePromptOperations(mcpPrompt);
+		if (operations.length === 0) {
+			throw new Error('Prompt not understood. Use syntax: list:, card: list | title, tag: card | tag.');
+		}
+
+		const knownLists = new Set(selectableLists.map((list) => list.name.trim().toLowerCase()));
+		const knownCards = new Set(selectableCards.map((card) => card.title.trim().toLowerCase()));
+		const previewEntries: BatchPreviewEntry[] = [];
+		let warningCount = 0;
+		let blockedCount = 0;
+
+		for (const operation of operations) {
+			if (operation.type === 'create_list') {
+				const normalizedList = operation.listName.trim().toLowerCase();
+				if (knownLists.has(normalizedList)) {
+					warningCount += 1;
+					previewEntries.push({
+						status: 'warning',
+						description: `Create list "${operation.listName}" (already exists, potential duplicate).`
+					});
+				} else {
+					previewEntries.push({
+						status: 'ok',
+						description: `Create list "${operation.listName}".`
+					});
+				}
+				knownLists.add(normalizedList);
+				continue;
+			}
+
+			if (operation.type === 'create_card') {
+				const normalizedList = operation.listName.trim().toLowerCase();
+				const normalizedCard = operation.cardTitle.trim().toLowerCase();
+				if (!knownLists.has(normalizedList)) {
+					blockedCount += 1;
+					previewEntries.push({
+						status: 'blocked',
+						description: `Create card "${operation.cardTitle}" in "${operation.listName}" (list not found).`
+					});
+				} else {
+					previewEntries.push({
+						status: 'ok',
+						description: `Create card "${operation.cardTitle}" in "${operation.listName}".`
+					});
+				}
+				knownCards.add(normalizedCard);
+				continue;
+			}
+
+			const normalizedCard = operation.cardTitle.trim().toLowerCase();
+			if (!knownCards.has(normalizedCard)) {
+				blockedCount += 1;
+				previewEntries.push({
+					status: 'blocked',
+					description: `Add tag "${operation.tagName}" on "${operation.cardTitle}" (card not found).`
+				});
+			} else {
+				previewEntries.push({
+					status: 'ok',
+					description: `Add tag "${operation.tagName}" on "${operation.cardTitle}".`
+				});
+			}
+		}
+
+		mcpPreviewEntries = previewEntries;
+		mcpPreviewSummary = `${operations.length} action(s), ${warningCount} warning(s), ${blockedCount} blocked.`;
+		mcpPreviewBlockedCount = blockedCount;
+	}
+
 	async function runPromptAssistant() {
 		if (!boardId || !currentUserId) {
 			return;
@@ -743,6 +828,7 @@
 				await runPromptAssistant();
 			} else {
 				mcpOutput = JSON.stringify(payload ?? {}, null, 2);
+				resetPromptPreview();
 			}
 
 			if (mcpAction !== 'get_board_full') {
@@ -920,6 +1006,12 @@
 			cancelled = true;
 			stopRealtimeSync();
 		};
+	});
+
+	$effect(() => {
+		if (mcpAction !== 'prompt_assistant') {
+			resetPromptPreview();
+		}
 	});
 
 	$effect(() => {
@@ -1202,10 +1294,27 @@
 						type="button"
 						class="mb-0.5 h-9 rounded-md bg-sky-600 px-3 text-sm font-semibold text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
 						onclick={() => void runBoardMcpAction()}
-						disabled={mcpLoading}
+						disabled={mcpLoading || (mcpAction === 'prompt_assistant' && mcpPreviewBlockedCount > 0)}
 					>
 						{mcpLoading ? 'Running...' : 'Run MCP Action'}
 					</button>
+					{#if mcpAction === 'prompt_assistant'}
+						<button
+							type="button"
+							class="mb-0.5 h-9 rounded-md border border-cyan-300/40 bg-cyan-500/20 px-3 text-sm font-semibold text-cyan-100 transition-colors hover:bg-cyan-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+							onclick={() => {
+								mcpError = '';
+								try {
+									previewPromptAssistant();
+								} catch (error) {
+									mcpError = error instanceof Error ? error.message : 'Preview failed.';
+								}
+							}}
+							disabled={mcpLoading}
+						>
+							Preview batch
+						</button>
+					{/if}
 					<button
 						type="button"
 						class="mb-0.5 h-9 rounded-md border border-amber-300/40 bg-amber-500/20 px-3 text-sm font-semibold text-amber-100 transition-colors hover:bg-amber-500/30 disabled:cursor-not-allowed disabled:opacity-60"
@@ -1220,6 +1329,24 @@
 					<p class="mt-2 text-xs text-amber-100/90">
 						Undo disponible pour le batch: {lastAiBatchLabel || `${lastAiBatchOperations.length} operations`}
 					</p>
+				{/if}
+
+				{#if mcpAction === 'prompt_assistant' && mcpPreviewEntries.length > 0}
+					<div class="mt-2 rounded-md border border-cyan-300/20 bg-cyan-500/10 p-3 text-xs text-cyan-50">
+						<p class="font-semibold text-cyan-100">Batch preview</p>
+						<p class="mt-1 text-cyan-100/80">{mcpPreviewSummary}</p>
+						<ul class="mt-2 space-y-1">
+							{#each mcpPreviewEntries as entry}
+								<li class="rounded-sm px-2 py-1 {entry.status === 'blocked'
+										? 'bg-rose-500/20 text-rose-100'
+										: entry.status === 'warning'
+											? 'bg-amber-500/20 text-amber-100'
+											: 'bg-emerald-500/20 text-emerald-100'}">
+									[{entry.status.toUpperCase()}] {entry.description}
+								</li>
+							{/each}
+						</ul>
+					</div>
 				{/if}
 
 				{#if mcpError}
