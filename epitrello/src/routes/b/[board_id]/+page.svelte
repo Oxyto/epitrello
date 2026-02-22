@@ -1019,6 +1019,12 @@
 				AI Tools
 			</button>
 			{#if boardId && canManage}
+				<a
+					href={resolve(`/b/${boardId}/settings`)}
+					class="rounded-md border border-sky-300/25 bg-slate-700/75 px-3 py-2 text-sm font-semibold text-slate-100 transition-colors hover:bg-slate-600/90"
+				>
+					Board Settings
+				</a>
 				<button
 					type="button"
 					onclick={() => void clearBoardContent()}
@@ -1027,12 +1033,6 @@
 				>
 					Clear Board
 				</button>
-				<a
-					href={resolve(`/b/${boardId}/settings`)}
-					class="rounded-md border border-sky-300/25 bg-slate-700/75 px-3 py-2 text-sm font-semibold text-slate-100 transition-colors hover:bg-slate-600/90"
-				>
-					Board Settings
-				</a>
 			{/if}
 		</div>
 		{#if mcpPanelOpen}
