@@ -118,6 +118,85 @@ bun run ensure-admin -- admin@example.com --create
 - `GET/POST/PATCH /api/board-sharing`
 - `GET/PATCH /api/notifications`
 - `GET/POST/PATCH/DELETE /api/users` (admin user management)
+- `GET/POST /api/mcp` (JSON-RPC endpoint for AI tool calls)
+
+## MCP-style AI Tools
+
+This project exposes a lightweight MCP-like endpoint at `POST /api/mcp`.
+
+- JSON-RPC version: `2.0`
+- Supported methods:
+  - `initialize`
+  - `tools/list`
+  - `tools/call`
+- Available tools:
+  - `create_board`
+  - `create_list`
+  - `create_card`
+  - `add_tag`
+  - `get_board_full`
+
+Example `tools/list` request:
+
+```bash
+curl -s http://localhost:5173/api/mcp \
+  -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+Example `tools/call` request:
+
+```bash
+curl -s http://localhost:5173/api/mcp \
+  -H 'content-type: application/json' \
+  -d '{
+    "jsonrpc":"2.0",
+    "id":"call-1",
+    "method":"tools/call",
+    "params":{
+      "name":"create_board",
+      "arguments":{
+        "ownerId":"user-1",
+        "name":"AI board"
+      }
+    }
+  }'
+```
+
+### Real MCP client (stdio bridge)
+
+For MCP clients that expect a `stdio` server (example: Claude Desktop), use:
+
+```bash
+bun run mcp:stdio
+```
+
+The bridge proxies tool calls to your running app (`/api/mcp`).
+
+- Default target URL: `http://localhost:5173`
+- Override with: `EPITRELLO_BASE_URL`
+
+Example:
+
+```bash
+EPITRELLO_BASE_URL=http://localhost:3000 bun run mcp:stdio
+```
+
+Claude Desktop config example (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "epitrello": {
+      "command": "bun",
+      "args": ["run", "/home/besnainou/projet_pro/epitrello/epitrello/scripts/mcp-stdio.ts"],
+      "env": {
+        "EPITRELLO_BASE_URL": "http://localhost:5173"
+      }
+    }
+  }
+}
+```
 
 ## Tests
 
