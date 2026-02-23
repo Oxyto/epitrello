@@ -41,14 +41,6 @@
 	let mcpLoading = $state(false);
 	let mcpError = $state('');
 	let mcpOutput = $state('');
-	let mcpAction = $state<
-		'create_list' | 'create_card' | 'add_tag' | 'get_board_full' | 'prompt_assistant'
-	>('create_list');
-	let mcpListName = $state('');
-	let mcpCardTitle = $state('');
-	let mcpTagName = $state('');
-	let mcpTargetListId = $state('');
-	let mcpTargetCardId = $state('');
 	let mcpPrompt = $state(
 		'list: Todo, Doing, Done\ncard: Todo | Préparer sprint\ncard: Todo | Écrire tests\ntag: Préparer sprint | urgent'
 	);
@@ -216,18 +208,6 @@
 				}))
 		)
 	);
-
-	$effect(() => {
-		if (!mcpTargetListId || !selectableLists.some((list) => list.uuid === mcpTargetListId)) {
-			mcpTargetListId = selectableLists[0]?.uuid ?? '';
-		}
-	});
-
-	$effect(() => {
-		if (!mcpTargetCardId || !selectableCards.some((card) => card.uuid === mcpTargetCardId)) {
-			mcpTargetCardId = selectableCards[0]?.uuid ?? '';
-		}
-	});
 
 	async function callMcpTool(name: string, args: Record<string, unknown>) {
 		const response = await fetch('/api/mcp', {
@@ -762,59 +742,8 @@
 		mcpError = '';
 
 		try {
-			let payload: unknown = null;
-
-			if (mcpAction === 'create_list') {
-				if (!canEdit) throw new Error('Read-only mode: you cannot create lists.');
-				const name = mcpListName.trim();
-				if (!name) throw new Error('List name is required.');
-				payload = await callMcpTool('create_list', {
-					boardId,
-					name,
-					userId: currentUserId
-				});
-			}
-
-			if (mcpAction === 'create_card') {
-				if (!canEdit) throw new Error('Read-only mode: you cannot create cards.');
-				const title = mcpCardTitle.trim();
-				if (!mcpTargetListId) throw new Error('Select a target list first.');
-				if (!title) throw new Error('Card title is required.');
-				payload = await callMcpTool('create_card', {
-					listId: mcpTargetListId,
-					title,
-					userId: currentUserId
-				});
-			}
-
-			if (mcpAction === 'add_tag') {
-				if (!canEdit) throw new Error('Read-only mode: you cannot add tags.');
-				const name = mcpTagName.trim();
-				if (!mcpTargetCardId) throw new Error('Select a target card first.');
-				if (!name) throw new Error('Tag name is required.');
-				payload = await callMcpTool('add_tag', {
-					cardId: mcpTargetCardId,
-					name,
-					userId: currentUserId
-				});
-			}
-
-			if (mcpAction === 'get_board_full') {
-				payload = await callMcpTool('get_board_full', {
-					boardId,
-					userId: currentUserId
-				});
-			}
-
-			if (mcpAction === 'prompt_assistant') {
-				await runPromptAssistant();
-			} else {
-				mcpOutput = JSON.stringify(payload ?? {}, null, 2);
-			}
-
-			if (mcpAction !== 'get_board_full') {
-				await Promise.all([loadBoardFull(), loadBoardHistory({ silent: true })]);
-			}
+			await runPromptAssistant();
+			await Promise.all([loadBoardFull(), loadBoardHistory({ silent: true })]);
 		} catch (error) {
 			mcpError = error instanceof Error ? error.message : 'MCP action failed.';
 		} finally {
@@ -1100,225 +1029,107 @@
 				class="mb-3 rounded-xl border border-sky-300/20 bg-slate-800/65 p-3 text-slate-100 shadow-sm shadow-slate-950/40"
 			>
 				<div class="flex flex-wrap items-end gap-2">
-					<div class="flex min-w-55 flex-col gap-1">
+					<div class="flex min-w-[38rem] flex-1 flex-col gap-1">
 						<label
-							for="board-mcp-action"
+							for="board-mcp-batch-name"
 							class="select-none text-[11px] font-semibold uppercase tracking-wide text-slate-300"
 						>
-							Action
+							Batch name (optional)
 						</label>
-						<select
-							id="board-mcp-action"
+						<input
+							id="board-mcp-batch-name"
+							type="text"
 							class="rounded-md border border-slate-500/70 bg-slate-700/80 px-2 py-1 text-sm text-slate-100"
-							bind:value={mcpAction}
+							placeholder="ex: sprint-setup-v1"
+							bind:value={mcpBatchName}
+						/>
+						<label
+							for="board-mcp-prompt"
+							class="select-none text-[11px] font-semibold uppercase tracking-wide text-slate-300"
 						>
-							<option value="create_list">Create list (MCP)</option>
-							<option value="create_card">Create card (MCP)</option>
-							<option value="add_tag">Add tag (MCP)</option>
-							<option value="get_board_full">Inspect board (MCP)</option>
-							<option value="prompt_assistant">Prompt IA (multi-actions)</option>
-						</select>
-					</div>
-
-					{#if mcpAction === 'create_list'}
-						<div class="flex min-w-70 flex-col gap-1">
-							<label
-								for="board-mcp-list-name"
-								class="select-none text-[11px] font-semibold uppercase tracking-wide text-slate-300"
-							>
-								List name
-							</label>
+							Prompt IA
+						</label>
+						<textarea
+							id="board-mcp-prompt"
+							rows="5"
+							class="rounded-md border border-slate-500/70 bg-slate-700/80 px-2 py-1 text-sm text-slate-100"
+							bind:value={mcpPrompt}
+						></textarea>
+						<label class="mt-1 inline-flex items-center gap-2 text-xs text-slate-300">
 							<input
-								id="board-mcp-list-name"
-								type="text"
-								class="rounded-md border border-slate-500/70 bg-slate-700/80 px-2 py-1 text-sm text-slate-100"
-								placeholder="Example: Sprint Backlog"
-								bind:value={mcpListName}
+								type="checkbox"
+								class="h-4 w-4 rounded border-slate-500/70 bg-slate-700/80"
+								bind:checked={mcpUseAiPlanner}
 							/>
-						</div>
-					{/if}
-
-					{#if mcpAction === 'create_card'}
-						<div class="flex min-w-55 flex-col gap-1">
-							<label
-								for="board-mcp-list"
-								class="select-none text-[11px] font-semibold uppercase tracking-wide text-slate-300"
-							>
-								Target list
-							</label>
-							<select
-								id="board-mcp-list"
-								class="rounded-md border border-slate-500/70 bg-slate-700/80 px-2 py-1 text-sm text-slate-100"
-								bind:value={mcpTargetListId}
-							>
-								{#if selectableLists.length === 0}
-									<option value="">No list available</option>
-								{:else}
-									{#each selectableLists as list (list.uuid)}
-										<option value={list.uuid}>{list.name}</option>
-									{/each}
-								{/if}
-							</select>
-						</div>
-						<div class="flex min-w-70 flex-col gap-1">
-							<label
-								for="board-mcp-card-title"
-								class="select-none text-[11px] font-semibold uppercase tracking-wide text-slate-300"
-							>
-								Card title
-							</label>
-							<input
-								id="board-mcp-card-title"
-								type="text"
-								class="rounded-md border border-slate-500/70 bg-slate-700/80 px-2 py-1 text-sm text-slate-100"
-								placeholder="Example: Implémenter OAuth"
-								bind:value={mcpCardTitle}
-							/>
-						</div>
-					{/if}
-
-					{#if mcpAction === 'add_tag'}
-						<div class="flex min-w-70 flex-col gap-1">
-							<label
-								for="board-mcp-card"
-								class="select-none text-[11px] font-semibold uppercase tracking-wide text-slate-300"
-							>
-								Target card
-							</label>
-							<select
-								id="board-mcp-card"
-								class="rounded-md border border-slate-500/70 bg-slate-700/80 px-2 py-1 text-sm text-slate-100"
-								bind:value={mcpTargetCardId}
-							>
-								{#if selectableCards.length === 0}
-									<option value="">No card available</option>
-								{:else}
-									{#each selectableCards as card (card.uuid)}
-										<option value={card.uuid}>{card.listName} / {card.title}</option>
-									{/each}
-								{/if}
-							</select>
-						</div>
-						<div class="flex min-w-55 flex-col gap-1">
-							<label
-								for="board-mcp-tag-name"
-								class="select-none text-[11px] font-semibold uppercase tracking-wide text-slate-300"
-							>
-								Tag name
-							</label>
-							<input
-								id="board-mcp-tag-name"
-								type="text"
-								class="rounded-md border border-slate-500/70 bg-slate-700/80 px-2 py-1 text-sm text-slate-100"
-								placeholder="Example: urgent"
-								bind:value={mcpTagName}
-							/>
-						</div>
-					{/if}
-
-					{#if mcpAction === 'prompt_assistant'}
-						<div class="flex min-w-[38rem] flex-1 flex-col gap-1">
-							<label
-								for="board-mcp-batch-name"
-								class="select-none text-[11px] font-semibold uppercase tracking-wide text-slate-300"
-							>
-								Batch name (optional)
-							</label>
-							<input
-								id="board-mcp-batch-name"
-								type="text"
-								class="rounded-md border border-slate-500/70 bg-slate-700/80 px-2 py-1 text-sm text-slate-100"
-								placeholder="ex: sprint-setup-v1"
-								bind:value={mcpBatchName}
-							/>
-							<label
-								for="board-mcp-prompt"
-								class="select-none text-[11px] font-semibold uppercase tracking-wide text-slate-300"
-							>
-								Prompt IA
-							</label>
-							<textarea
-								id="board-mcp-prompt"
-								rows="5"
-								class="rounded-md border border-slate-500/70 bg-slate-700/80 px-2 py-1 text-sm text-slate-100"
-								bind:value={mcpPrompt}
-							></textarea>
-							<label class="mt-1 inline-flex items-center gap-2 text-xs text-slate-300">
-								<input
-									type="checkbox"
-									class="h-4 w-4 rounded border-slate-500/70 bg-slate-700/80"
-									bind:checked={mcpUseAiPlanner}
-								/>
-								Use AI planner (user token + model)
-							</label>
-							{#if mcpUseAiPlanner}
-								<div class="grid grid-cols-1 gap-2 md:grid-cols-3">
-									<div class="flex flex-col gap-1">
-										<label
-											for="board-mcp-ai-provider"
-											class="select-none text-[11px] font-semibold uppercase tracking-wide text-slate-300"
-										>
-											Provider
-										</label>
-										<select
-											id="board-mcp-ai-provider"
-											class="rounded-md border border-slate-500/70 bg-slate-700/80 px-2 py-1 text-sm text-slate-100"
-											bind:value={mcpAiProvider}
-										>
-											<option value="openai">OpenAI</option>
-											<option value="openrouter">OpenRouter</option>
-										</select>
-									</div>
-									<div class="flex flex-col gap-1">
-										<label
-											for="board-mcp-ai-model"
-											class="select-none text-[11px] font-semibold uppercase tracking-wide text-slate-300"
-										>
-											Model
-										</label>
-										<input
-											id="board-mcp-ai-model"
-											type="text"
-											class="rounded-md border border-slate-500/70 bg-slate-700/80 px-2 py-1 text-sm text-slate-100"
-											placeholder="gpt-4.1-mini"
-											bind:value={mcpAiModel}
-										/>
-									</div>
-									<div class="flex flex-col gap-1">
-										<label
-											for="board-mcp-ai-key"
-											class="select-none text-[11px] font-semibold uppercase tracking-wide text-slate-300"
-										>
-											API key
-										</label>
-										<input
-											id="board-mcp-ai-key"
-											type="password"
-											class="rounded-md border border-slate-500/70 bg-slate-700/80 px-2 py-1 text-sm text-slate-100"
-											placeholder="sk-..."
-											bind:value={mcpAiApiKey}
-										/>
-									</div>
+							Use AI planner (user token + model)
+						</label>
+						{#if mcpUseAiPlanner}
+							<div class="grid grid-cols-1 gap-2 md:grid-cols-3">
+								<div class="flex flex-col gap-1">
+									<label
+										for="board-mcp-ai-provider"
+										class="select-none text-[11px] font-semibold uppercase tracking-wide text-slate-300"
+									>
+										Provider
+									</label>
+									<select
+										id="board-mcp-ai-provider"
+										class="rounded-md border border-slate-500/70 bg-slate-700/80 px-2 py-1 text-sm text-slate-100"
+										bind:value={mcpAiProvider}
+									>
+										<option value="openai">OpenAI</option>
+										<option value="openrouter">OpenRouter</option>
+									</select>
 								</div>
-								<p class="text-xs text-slate-400">
-									Token is used server-side for this request and not written to board history.
-								</p>
-							{/if}
-							<div class="text-xs text-slate-300">
-								<p>{mcpUseAiPlanner ? 'Prompt naturel recommandé:' : 'Format recommandé:'}</p>
-								{#if !mcpUseAiPlanner}
-									<p><code>list: nom1, nom2, nom3</code></p>
-									<p><code>card: listName | cardName</code></p>
-									<p><code>tag: cardName | tagName</code></p>
-								{/if}
-								<p class="mt-1">Exemple naturel:</p>
-								<p>
-									Crée les listes Todo, Doing, Done; ajoute des cartes dans Todo: Préparer
-									sprint, Écrire tests; ajoute le tag urgent sur Préparer sprint
-								</p>
+								<div class="flex flex-col gap-1">
+									<label
+										for="board-mcp-ai-model"
+										class="select-none text-[11px] font-semibold uppercase tracking-wide text-slate-300"
+									>
+										Model
+									</label>
+									<input
+										id="board-mcp-ai-model"
+										type="text"
+										class="rounded-md border border-slate-500/70 bg-slate-700/80 px-2 py-1 text-sm text-slate-100"
+										placeholder="gpt-4.1-mini"
+										bind:value={mcpAiModel}
+									/>
+								</div>
+								<div class="flex flex-col gap-1">
+									<label
+										for="board-mcp-ai-key"
+										class="select-none text-[11px] font-semibold uppercase tracking-wide text-slate-300"
+									>
+										API key
+									</label>
+									<input
+										id="board-mcp-ai-key"
+										type="password"
+										class="rounded-md border border-slate-500/70 bg-slate-700/80 px-2 py-1 text-sm text-slate-100"
+										placeholder="sk-..."
+										bind:value={mcpAiApiKey}
+									/>
+								</div>
 							</div>
+							<p class="text-xs text-slate-400">
+								Token is used server-side for this request and not written to board history.
+							</p>
+						{/if}
+						<div class="text-xs text-slate-300">
+							<p>{mcpUseAiPlanner ? 'Prompt naturel recommandé:' : 'Format recommandé:'}</p>
+							{#if !mcpUseAiPlanner}
+								<p><code>list: nom1, nom2, nom3</code></p>
+								<p><code>card: listName | cardName</code></p>
+								<p><code>tag: cardName | tagName</code></p>
+							{/if}
+							<p class="mt-1">Exemple naturel:</p>
+							<p>
+								Crée les listes Todo, Doing, Done; ajoute des cartes dans Todo: Préparer sprint,
+								Écrire tests; ajoute le tag urgent sur Préparer sprint
+							</p>
 						</div>
-					{/if}
+					</div>
 
 					<button
 						type="button"
